@@ -1,0 +1,450 @@
+[
+  {
+    "name": "Population Reference Bureau",
+    "category": "social",
+    "baseUrl": "https://www.prb.org",
+    "startUrls": ["https://www.prb.org", "https://www.prb.org/articles/", "https://www.prb.org/resources/"],
+    "archiveUrlTemplates": ["https://www.prb.org/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://www.prb.org/sitemap.xml", "https://www.prb.org/post-sitemap.xml"]
+  },
+  {
+    "name": "UN DESA Population",
+    "category": "social",
+    "baseUrl": "https://www.un.org",
+    "startUrls": ["https://www.un.org/en/development/desa/population/", "https://www.un.org/development/desa/pd/news"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.un.org/sitemap.xml"]
+  },
+  {
+    "name": "US Census",
+    "category": "social",
+    "baseUrl": "https://www.census.gov",
+    "startUrls": ["https://www.census.gov/newsroom.html", "https://www.census.gov/newsroom/press-releases.html", "https://www.census.gov/newsroom/blogs.html"],
+    "archiveUrlTemplates": ["https://www.census.gov/newsroom/press-releases/{yyyy}/{mm}.html"],
+    "sitemapUrls": ["https://www.census.gov/sitemap.xml"]
+  },
+  {
+    "name": "Boing Boing",
+    "category": "social",
+    "baseUrl": "https://boingboing.net",
+    "startUrls": ["https://boingboing.net", "https://boingboing.net/category/science", "https://boingboing.net/category/technology", "https://boingboing.net/category/culture"],
+    "archiveUrlTemplates": ["https://boingboing.net/{yyyy}/{mm}"],
+    "sitemapUrls": ["https://boingboing.net/sitemap.xml", "https://boingboing.net/post-sitemap.xml"]
+  },
+  {
+    "name": "Arts & Literature Daily",
+    "category": "social",
+    "baseUrl": "https://www.aldaily.com",
+    "startUrls": ["https://www.aldaily.com"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.aldaily.com/sitemap.xml"]
+  },
+  {
+    "name": "Variety",
+    "category": "social",
+    "baseUrl": "https://variety.com",
+    "startUrls": ["https://variety.com", "https://variety.com/v/tv/", "https://variety.com/v/film/", "https://variety.com/v/digital/"],
+    "archiveUrlTemplates": ["https://variety.com/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://variety.com/sitemap.xml", "https://variety.com/post-sitemap.xml"]
+  },
+  {
+    "name": "The Marginalian",
+    "category": "social",
+    "baseUrl": "https://www.themarginalian.org",
+    "startUrls": ["https://www.themarginalian.org"],
+    "archiveUrlTemplates": ["https://www.themarginalian.org/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://www.themarginalian.org/sitemap.xml", "https://www.themarginalian.org/post-sitemap.xml"]
+  },
+  {
+    "name": "TechCrunch",
+    "category": "technology",
+    "baseUrl": "https://techcrunch.com",
+    "startUrls": ["https://techcrunch.com", "https://techcrunch.com/category/artificial-intelligence/", "https://techcrunch.com/category/security/", "https://techcrunch.com/category/startups/", "https://techcrunch.com/category/enterprise/", "https://techcrunch.com/category/apps/", "https://techcrunch.com/category/venture/"],
+    "archiveUrlTemplates": ["https://techcrunch.com/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://techcrunch.com/sitemap.xml"]
+  },
+  {
+    "name": "Digg",
+    "category": "social",
+    "baseUrl": "https://digg.com",
+    "startUrls": ["https://digg.com", "https://digg.com/news", "https://digg.com/technology", "https://digg.com/science"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://digg.com/sitemap.xml"]
+  },
+  {
+    "name": "Technorati",
+    "category": "social",
+    "baseUrl": "https://www.technorati.com",
+    "startUrls": ["https://www.technorati.com"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.technorati.com/sitemap.xml"]
+  },
+  {
+    "name": "Wired",
+    "category": "technology",
+    "baseUrl": "https://www.wired.com",
+    "startUrls": ["https://www.wired.com", "https://www.wired.com/category/business/", "https://www.wired.com/category/science/", "https://www.wired.com/category/security/", "https://www.wired.com/tag/artificial-intelligence/"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.wired.com/sitemap.xml"]
+  },
+  {
+    "name": "Slashdot",
+    "category": "technology",
+    "baseUrl": "https://slashdot.org",
+    "startUrls": ["https://slashdot.org", "https://slashdot.org/stories", "https://slashdot.org/recent"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://slashdot.org/sitemap.xml"]
+  },
+  {
+    "name": "ScienceDaily",
+    "category": "technology",
+    "baseUrl": "https://www.sciencedaily.com",
+    "startUrls": ["https://www.sciencedaily.com/news/", "https://www.sciencedaily.com/news/computers_math/", "https://www.sciencedaily.com/news/matter_energy/", "https://www.sciencedaily.com/news/earth_climate/", "https://www.sciencedaily.com/news/plants_animals/"],
+    "archiveUrlTemplates": ["https://www.sciencedaily.com/news/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://www.sciencedaily.com/sitemap.xml"]
+  },
+  {
+    "name": "Fresh Patents",
+    "category": "technology",
+    "baseUrl": "https://www.freshpatents.com",
+    "startUrls": ["https://www.freshpatents.com"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.freshpatents.com/sitemap.xml"]
+  },
+  {
+    "name": "Kurzweil AI",
+    "category": "technology",
+    "baseUrl": "https://www.kurzweilai.net",
+    "startUrls": ["https://www.kurzweilai.net", "https://www.kurzweilai.net/news"],
+    "archiveUrlTemplates": ["https://www.kurzweilai.net/{yyyy}/{mm}"],
+    "sitemapUrls": ["https://www.kurzweilai.net/sitemap.xml", "https://www.kurzweilai.net/post-sitemap.xml"]
+  },
+  {
+    "name": "Singularity Hub",
+    "category": "technology",
+    "baseUrl": "https://singularityhub.com",
+    "startUrls": ["https://singularityhub.com", "https://singularityhub.com/category/technology/", "https://singularityhub.com/category/artificial-intelligence/", "https://singularityhub.com/category/energy/"],
+    "archiveUrlTemplates": ["https://singularityhub.com/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://singularityhub.com/sitemap.xml", "https://singularityhub.com/post-sitemap.xml"]
+  },
+  {
+    "name": "Real World Economics Review",
+    "category": "economic",
+    "baseUrl": "https://rwer.wordpress.com",
+    "startUrls": ["https://rwer.wordpress.com"],
+    "archiveUrlTemplates": ["https://rwer.wordpress.com/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://rwer.wordpress.com/sitemap.xml"]
+  },
+  {
+    "name": "OECD Statistics Blog",
+    "category": "economic",
+    "baseUrl": "https://oecdstatistics.blog",
+    "startUrls": ["https://oecdstatistics.blog"],
+    "archiveUrlTemplates": ["https://oecdstatistics.blog/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://oecdstatistics.blog/sitemap.xml", "https://oecdstatistics.blog/post-sitemap.xml"]
+  },
+  {
+    "name": "Innovation Daily",
+    "category": "economic",
+    "baseUrl": "https://innovationdaily.com",
+    "startUrls": ["https://innovationdaily.com"],
+    "archiveUrlTemplates": ["https://innovationdaily.com/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://innovationdaily.com/sitemap.xml"]
+  },
+  {
+    "name": "The Economist",
+    "category": "economic",
+    "baseUrl": "https://www.economist.com",
+    "startUrls": ["https://www.economist.com", "https://www.economist.com/finance-and-economics", "https://www.economist.com/business", "https://www.economist.com/science-and-technology"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.economist.com/sitemap.xml"]
+  },
+  {
+    "name": "IMF World Economic Outlook",
+    "category": "economic",
+    "baseUrl": "https://www.imf.org",
+    "startUrls": ["https://www.imf.org/en/Publications/WEO", "https://www.imf.org/en/News"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.imf.org/sitemap.xml"]
+  },
+  {
+    "name": "UN Statistics Division",
+    "category": "economic",
+    "baseUrl": "https://unstats.un.org",
+    "startUrls": ["https://unstats.un.org", "https://unstats.un.org/UNSDWebsite/news/"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://unstats.un.org/sitemap.xml"]
+  },
+  {
+    "name": "Fast Company",
+    "category": "economic",
+    "baseUrl": "https://www.fastcompany.com",
+    "startUrls": ["https://www.fastcompany.com", "https://www.fastcompany.com/technology", "https://www.fastcompany.com/work-life", "https://www.fastcompany.com/impact"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.fastcompany.com/sitemap.xml"]
+  },
+  {
+    "name": "VentureBeat",
+    "category": "technology",
+    "baseUrl": "https://venturebeat.com",
+    "startUrls": ["https://venturebeat.com", "https://venturebeat.com/category/ai/", "https://venturebeat.com/category/security/", "https://venturebeat.com/category/data-infrastructure/"],
+    "archiveUrlTemplates": ["https://venturebeat.com/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://venturebeat.com/sitemap.xml"]
+  },
+  {
+    "name": "The Watchers",
+    "category": "environmental",
+    "baseUrl": "https://watchers.news",
+    "startUrls": ["https://watchers.news", "https://watchers.news/category/earth-changes/", "https://watchers.news/category/climate-change/"],
+    "archiveUrlTemplates": ["https://watchers.news/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://watchers.news/sitemap.xml", "https://watchers.news/post-sitemap.xml"]
+  },
+  {
+    "name": "Treehugger",
+    "category": "environmental",
+    "baseUrl": "https://www.treehugger.com",
+    "startUrls": ["https://www.treehugger.com", "https://www.treehugger.com/sustainability-4846396", "https://www.treehugger.com/renewable-energy-4846429", "https://www.treehugger.com/climate-change-4846421"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.treehugger.com/sitemap.xml"]
+  },
+  {
+    "name": "Trellis / GreenBiz",
+    "category": "environmental",
+    "baseUrl": "https://trellis.net",
+    "startUrls": ["https://trellis.net", "https://trellis.net/topic/climate/", "https://trellis.net/topic/energy/", "https://trellis.net/topic/circularity/", "https://trellis.net/topic/transportation/"],
+    "archiveUrlTemplates": ["https://trellis.net/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://trellis.net/sitemap.xml", "https://trellis.net/post-sitemap.xml"]
+  },
+  {
+    "name": "Resilience",
+    "category": "environmental",
+    "baseUrl": "https://www.resilience.org",
+    "startUrls": ["https://www.resilience.org", "https://www.resilience.org/stories-list/energy/", "https://www.resilience.org/stories-list/environment/", "https://www.resilience.org/stories-list/economics/"],
+    "archiveUrlTemplates": ["https://www.resilience.org/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://www.resilience.org/sitemap.xml", "https://www.resilience.org/post-sitemap.xml"]
+  },
+  {
+    "name": "Natural Resources Defense Council",
+    "category": "environmental",
+    "baseUrl": "https://www.nrdc.org",
+    "startUrls": ["https://www.nrdc.org", "https://www.nrdc.org/stories", "https://www.nrdc.org/press-releases", "https://www.nrdc.org/issues/climate-change"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.nrdc.org/sitemap.xml"]
+  },
+  {
+    "name": "Worldwatch Institute",
+    "category": "environmental",
+    "baseUrl": "https://www.worldwatch.org",
+    "startUrls": ["https://www.worldwatch.org"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.worldwatch.org/sitemap.xml"]
+  },
+  {
+    "name": "Green Car Reports",
+    "category": "environmental",
+    "baseUrl": "https://www.greencarreports.com",
+    "startUrls": ["https://www.greencarreports.com", "https://www.greencarreports.com/news", "https://www.greencarreports.com/news/electric-cars"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.greencarreports.com/sitemap.xml"]
+  },
+  {
+    "name": "Security & Sustainability Guide",
+    "category": "environmental",
+    "baseUrl": "https://www.sustainabilitydisclosure.education",
+    "startUrls": ["https://www.sustainabilitydisclosure.education"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.sustainabilitydisclosure.education/sitemap.xml"]
+  },
+  {
+    "name": "CIA World Factbook",
+    "category": "political",
+    "baseUrl": "https://www.cia.gov",
+    "startUrls": ["https://www.cia.gov/the-world-factbook/", "https://www.cia.gov/the-world-factbook/references/"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.cia.gov/sitemap.xml"]
+  },
+  {
+    "name": "USA.gov News",
+    "category": "political",
+    "baseUrl": "https://www.usa.gov",
+    "startUrls": ["https://www.usa.gov/news"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.usa.gov/sitemap.xml"]
+  },
+  {
+    "name": "Change.org",
+    "category": "political",
+    "baseUrl": "https://www.change.org",
+    "startUrls": ["https://www.change.org"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.change.org/sitemap.xml"]
+  },
+  {
+    "name": "Project Censored",
+    "category": "political",
+    "baseUrl": "https://www.projectcensored.org",
+    "startUrls": ["https://www.projectcensored.org", "https://www.projectcensored.org/category/news/", "https://www.projectcensored.org/category/state-of-the-free-press/"],
+    "archiveUrlTemplates": ["https://www.projectcensored.org/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://www.projectcensored.org/sitemap.xml", "https://www.projectcensored.org/post-sitemap.xml"]
+  },
+  {
+    "name": "Drudge Report",
+    "category": "political",
+    "baseUrl": "https://www.drudgereport.com",
+    "startUrls": ["https://www.drudgereport.com"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.drudgereport.com/sitemap.xml"]
+  },
+  {
+    "name": "Zero Hedge",
+    "category": "political",
+    "baseUrl": "https://www.zerohedge.com",
+    "startUrls": ["https://www.zerohedge.com", "https://www.zerohedge.com/political", "https://www.zerohedge.com/economics", "https://www.zerohedge.com/markets"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.zerohedge.com/sitemap.xml"]
+  },
+  {
+    "name": "Jacobin",
+    "category": "political",
+    "baseUrl": "https://jacobin.com",
+    "startUrls": ["https://jacobin.com", "https://jacobin.com/politics", "https://jacobin.com/labor", "https://jacobin.com/economics"],
+    "archiveUrlTemplates": ["https://jacobin.com/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://jacobin.com/sitemap.xml"]
+  },
+  {
+    "name": "FutureSeek",
+    "category": "general",
+    "baseUrl": "https://www.futureseek.net",
+    "startUrls": ["https://www.futureseek.net"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.futureseek.net/sitemap.xml"]
+  },
+  {
+    "name": "Next Big Future",
+    "category": "general",
+    "baseUrl": "https://www.nextbigfuture.com",
+    "startUrls": ["https://www.nextbigfuture.com", "https://www.nextbigfuture.com/category/technology", "https://www.nextbigfuture.com/category/energy", "https://www.nextbigfuture.com/category/ai"],
+    "archiveUrlTemplates": ["https://www.nextbigfuture.com/{yyyy}/{mm}"],
+    "sitemapUrls": ["https://www.nextbigfuture.com/sitemap.xml", "https://www.nextbigfuture.com/post-sitemap.xml"]
+  },
+  {
+    "name": "Reddit Technology",
+    "category": "general",
+    "baseUrl": "https://www.reddit.com",
+    "startUrls": ["https://www.reddit.com/r/technology/", "https://www.reddit.com/r/Futurology/", "https://www.reddit.com/r/science/", "https://www.reddit.com/r/economics/", "https://www.reddit.com/r/environment/"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": []
+  },
+  {
+    "name": "Shaping Tomorrow",
+    "category": "general",
+    "baseUrl": "https://www.shapingtomorrow.com",
+    "startUrls": ["https://www.shapingtomorrow.com"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.shapingtomorrow.com/sitemap.xml"]
+  },
+  {
+    "name": "TrendWatching",
+    "category": "general",
+    "baseUrl": "https://www.trendwatching.com",
+    "startUrls": ["https://www.trendwatching.com", "https://www.trendwatching.com/insights"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.trendwatching.com/sitemap.xml"]
+  },
+  {
+    "name": "Future Edition",
+    "category": "general",
+    "baseUrl": "https://futureedition.net",
+    "startUrls": ["https://futureedition.net"],
+    "archiveUrlTemplates": ["https://futureedition.net/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://futureedition.net/sitemap.xml", "https://futureedition.net/post-sitemap.xml"]
+  },
+  {
+    "name": "Futurity",
+    "category": "general",
+    "baseUrl": "https://www.futurity.org",
+    "startUrls": ["https://www.futurity.org", "https://www.futurity.org/category/science-technology/", "https://www.futurity.org/category/earth-environment/", "https://www.futurity.org/category/society-culture/"],
+    "archiveUrlTemplates": ["https://www.futurity.org/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://www.futurity.org/sitemap.xml", "https://www.futurity.org/post-sitemap.xml"]
+  },
+  {
+    "name": "World Future Society",
+    "category": "general",
+    "baseUrl": "https://www.wfs.org",
+    "startUrls": ["https://www.wfs.org"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.wfs.org/sitemap.xml"]
+  },
+  {
+    "name": "Future Agenda",
+    "category": "general",
+    "baseUrl": "https://www.futureagenda.org",
+    "startUrls": ["https://www.futureagenda.org", "https://www.futureagenda.org/foresights/"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.futureagenda.org/sitemap.xml"]
+  },
+  {
+    "name": "Future Timeline",
+    "category": "general",
+    "baseUrl": "https://www.futuretimeline.net",
+    "startUrls": ["https://www.futuretimeline.net", "https://www.futuretimeline.net/blog/"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.futuretimeline.net/sitemap.xml"]
+  },
+  {
+    "name": "Quantumrun",
+    "category": "general",
+    "baseUrl": "https://www.quantumrun.com",
+    "startUrls": ["https://www.quantumrun.com", "https://www.quantumrun.com/insights"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.quantumrun.com/sitemap.xml"]
+  },
+  {
+    "name": "Flipboard",
+    "category": "general",
+    "baseUrl": "https://flipboard.com",
+    "startUrls": ["https://flipboard.com"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": []
+  },
+  {
+    "name": "Tumblr",
+    "category": "general",
+    "baseUrl": "https://www.tumblr.com",
+    "startUrls": ["https://www.tumblr.com/explore/trending"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": []
+  },
+  {
+    "name": "Instapaper",
+    "category": "general",
+    "baseUrl": "https://www.instapaper.com",
+    "startUrls": ["https://www.instapaper.com"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": []
+  },
+  {
+    "name": "Snopes",
+    "category": "general",
+    "baseUrl": "https://www.snopes.com",
+    "startUrls": ["https://www.snopes.com", "https://www.snopes.com/news/", "https://www.snopes.com/fact-check/"],
+    "archiveUrlTemplates": ["https://www.snopes.com/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://www.snopes.com/sitemap.xml", "https://www.snopes.com/post-sitemap.xml"]
+  },
+  {
+    "name": "Google Trends",
+    "category": "general",
+    "baseUrl": "https://trends.google.com",
+    "startUrls": ["https://trends.google.com/trends/"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": []
+  },
+  {
+    "name": "Futures Centre",
+    "category": "general",
+    "baseUrl": "https://www.futurescentre.org",
+    "startUrls": ["https://www.futurescentre.org", "https://www.futurescentre.org/signals-of-change/"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.futurescentre.org/sitemap.xml"]
+  }
+]
