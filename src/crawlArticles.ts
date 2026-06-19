@@ -1,4 +1,4 @@
-import { PlaywrightCrawler, RequestQueue } from "crawlee";
+import { PlaywrightCrawler } from "crawlee";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import crypto from "crypto";
@@ -16,6 +16,45 @@ const MAX_CONCURRENCY = Number(process.env.MAX_CONCURRENCY || 2);
 const TEST_SOURCE_NAME = process.env.TEST_SOURCE_NAME || "";
 
 const MIN_TEXT_LENGTH = Number(process.env.MIN_TEXT_LENGTH || 500);
+const BLOCKED_RESOURCE_TYPES = new Set([
+  "image",
+  "media",
+  "font",
+  "stylesheet"
+]);
+const ARTICLE_BLOCKED_PARTS = [
+  "/sponsor/",
+  "/sponsored/",
+  "/press-release/",
+  "/tag/",
+  "/category/",
+  "/author/",
+  "/about",
+  "/contact",
+  "/privacy",
+  "/terms",
+  "/login",
+  "/signup",
+  "/subscribe",
+  "/newsletter",
+  "/video",
+  "/podcast",
+  "?s="
+];
+const ARTICLE_BLOCKED_EXTENSIONS = [
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+  ".gif",
+  ".svg",
+  ".pdf",
+  ".zip",
+  ".mp4",
+  ".mp3",
+  ".css",
+  ".js"
+];
 
 function cleanText(text: string): string {
   return text
@@ -42,9 +81,8 @@ function hashText(text: string): string {
   return crypto.createHash("sha256").update(text).digest("hex");
 }
 
-function extractArticleTextFromHtml(html: string, url: string): string {
-  const dom = new JSDOM(html, { url });
-  const reader = new Readability(dom.window.document);
+function extractArticleTextFromDocument(document: Document): string {
+  const reader = new Readability(document.cloneNode(true) as Document);
   const article = reader.parse();
 
   return cleanText(article?.textContent || "");
@@ -95,12 +133,6 @@ async function extractPageData(page: any, url: string) {
       ""
   );
 
-  const description = cleanText(
-    getMeta('meta[name="description"]') ||
-      getMeta('meta[property="og:description"]') ||
-      ""
-  );
-
   const timeDatetime =
     document.querySelector("time")?.getAttribute("datetime") || null;
 
@@ -118,15 +150,14 @@ async function extractPageData(page: any, url: string) {
     timeDatetime ||
     jsonLdDate;
 
-  const articleText = extractArticleTextFromHtml(html, url);
+  const articleText = extractArticleTextFromDocument(document);
   const fallbackText = cleanText(document.body?.textContent || "");
   const finalText = articleText.length > 300 ? articleText : fallbackText;
 
   return {
     title,
-    description,
     publishedDate: parseDate(publishedRaw),
-    text: cleanText(finalText)
+    text: finalText
   };
 }
 
@@ -151,19 +182,15 @@ async function main() {
     return;
   }
 
-  const requestQueue = await RequestQueue.open(`crawl-articles-${Date.now()}`);
-
-  for (const item of pendingUrls) {
-    await requestQueue.addRequest({
-      url: item.url,
-      uniqueKey: `article|${item.id}|${item.url}`,
-      userData: {
-        id: item.id,
-        sourceName: item.source_name,
-        sourceCategory: item.source_category
-      }
-    });
-  }
+  const requests = pendingUrls.map((item) => ({
+    url: item.url,
+    uniqueKey: `article|${item.id}|${item.url}`,
+    userData: {
+      id: item.id,
+      sourceName: item.source_name,
+      sourceCategory: item.source_category
+    }
+  }));
 
   let crawled = 0;
   let skipped = 0;
@@ -171,15 +198,28 @@ async function main() {
   let inserted = 0;
 
   const crawler = new PlaywrightCrawler({
-    requestQueue,
     maxConcurrency: MAX_CONCURRENCY,
     maxRequestsPerCrawl: CRAWL_LIMIT,
 
-    launchContext:{
-      launchOptions:{
-        headless:true
+    launchContext: {
+      launchOptions: {
+        headless: true
       }
     },
+
+    preNavigationHooks: [
+      async ({ page }) => {
+        await page.route("**/*", (route) => {
+          const resourceType = route.request().resourceType();
+
+          if (BLOCKED_RESOURCE_TYPES.has(resourceType)) {
+            return route.abort();
+          }
+
+          return route.continue();
+        });
+      }
+    ],
 
     async requestHandler({ page, request, log }) {
       const id = request.userData.id as number;
@@ -190,11 +230,9 @@ async function main() {
         skipped++;
         markUrlStatus(db, id, "skipped", "Skipped non-article URL");
         return;
-        }
+      }
 
       log.info(`[ARTICLE] ${request.url}`);
-
-      
 
       try {
         const pageData = await extractPageData(page, request.url);
@@ -231,9 +269,6 @@ async function main() {
 
         log.info(`[SAVED] ${pageData.title}`);
       } catch (err: any) {
-        failed++;
-        markUrlStatus(db, id, "failed", err?.message || "Unknown error");
-        
         const message = err?.stack || err?.message || String(err);
 
         failed++;
@@ -251,7 +286,7 @@ async function main() {
     }
   });
 
-  await crawler.run();
+  await crawler.run(requests);
 
   const stats = getArticleStats(db);
 
@@ -273,46 +308,11 @@ async function main() {
 function shouldSkipArticleUrl(url: string): boolean {
   const u = url.toLowerCase();
 
-  const blockedParts = [
-    "/sponsor/",
-    "/sponsored/",
-    "/press-release/",
-    "/tag/",
-    "/category/",
-    "/author/",
-    "/about",
-    "/contact",
-    "/privacy",
-    "/terms",
-    "/login",
-    "/signup",
-    "/subscribe",
-    "/newsletter",
-    "/video",
-    "/podcast",
-    "?s="
-  ];
-
-  if (blockedParts.some((part) => u.includes(part))) {
+  if (ARTICLE_BLOCKED_PARTS.some((part) => u.includes(part))) {
     return true;
   }
 
-  const blockedExtensions = [
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".webp",
-    ".gif",
-    ".svg",
-    ".pdf",
-    ".zip",
-    ".mp4",
-    ".mp3",
-    ".css",
-    ".js"
-  ];
-
-  if (blockedExtensions.some((ext) => u.endsWith(ext))) {
+  if (ARTICLE_BLOCKED_EXTENSIONS.some((ext) => u.endsWith(ext))) {
     return true;
   }
 

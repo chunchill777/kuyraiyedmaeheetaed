@@ -1,9 +1,63 @@
-import { PlaywrightCrawler, RequestQueue } from "crawlee";
+import { PlaywrightCrawler } from "crawlee";
 import { Source, DiscoveredUrl } from "./types";
 
 const MAX_SITEMAP_URLS = Number(process.env.MAX_SITEMAP_URLS || 3000);
 const MAX_LISTING_REQUESTS = Number(process.env.MAX_LISTING_REQUESTS || 100);
 const MAX_CONCURRENCY = Number(process.env.MAX_CONCURRENCY || 2);
+const BLOCKED_RESOURCE_TYPES = new Set([
+  "image",
+  "media",
+  "font",
+  "stylesheet"
+]);
+const BLOCKED_URL_PARTS = [
+  "/login",
+  "/signin",
+  "/signup",
+  "/subscribe",
+  "/subscription",
+  "/privacy",
+  "/terms",
+  "/about",
+  "/contact",
+  "/advertise",
+  "/newsletter",
+  "/author",
+  "/authors",
+  "/tag/",
+  "/tags/",
+  "/video",
+  "/videos",
+  "/podcast",
+  "/podcasts",
+  "/events",
+  "/event",
+  "/careers",
+  "/jobs",
+  "/shop",
+  "/cart",
+  "/account",
+  "/search",
+  "?s=",
+  "/?s="
+];
+const BLOCKED_URL_EXTENSIONS = [
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".gif",
+  ".webp",
+  ".svg",
+  ".pdf",
+  ".zip",
+  ".mp4",
+  ".mp3",
+  ".avi",
+  ".mov",
+  ".css",
+  ".js",
+  ".ico"
+];
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -95,58 +149,8 @@ function isSameDomain(url: string, baseUrl: string): boolean {
 function shouldSkipUrl(url: string): boolean {
   const u = url.toLowerCase();
 
-  const blockedParts = [
-    "/login",
-    "/signin",
-    "/signup",
-    "/subscribe",
-    "/subscription",
-    "/privacy",
-    "/terms",
-    "/about",
-    "/contact",
-    "/advertise",
-    "/newsletter",
-    "/author",
-    "/authors",
-    "/tag/",
-    "/tags/",
-    "/video",
-    "/videos",
-    "/podcast",
-    "/podcasts",
-    "/events",
-    "/event",
-    "/careers",
-    "/jobs",
-    "/shop",
-    "/cart",
-    "/account",
-    "/search",
-    "?s=",
-    "/?s="
-  ];
-
-  const blockedExtensions = [
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".gif",
-    ".webp",
-    ".svg",
-    ".pdf",
-    ".zip",
-    ".mp4",
-    ".mp3",
-    ".avi",
-    ".mov",
-    ".css",
-    ".js",
-    ".ico"
-  ];
-
-  if (blockedParts.some((part) => u.includes(part))) return true;
-  if (blockedExtensions.some((ext) => u.endsWith(ext))) return true;
+  if (BLOCKED_URL_PARTS.some((part) => u.includes(part))) return true;
+  if (BLOCKED_URL_EXTENSIONS.some((ext) => u.endsWith(ext))) return true;
   if (u.includes("#")) return true;
   if (u.startsWith("mailto:")) return true;
   if (u.startsWith("tel:")) return true;
@@ -250,22 +254,40 @@ export async function discoverFromListingPages(params: {
 }): Promise<DiscoveredUrl[]> {
   const { source, listingUrls } = params;
   const baseUrl = getBaseUrl(source);
+  const baseHostname = new URL(baseUrl).hostname;
 
-  const requestQueue = await RequestQueue.open(`discover-${Date.now()}`);
   const output: DiscoveredUrl[] = [];
   const seenUrls = new Set<string>();
+  const seenListingUrls = new Set<string>();
+  const requests: Array<{ url: string; uniqueKey: string }> = [];
 
   for (const url of listingUrls) {
-    await requestQueue.addRequest({
+    if (seenListingUrls.has(url)) continue;
+    seenListingUrls.add(url);
+
+    requests.push({
       url,
       uniqueKey: `listing|${url}`
     });
   }
 
   const crawler = new PlaywrightCrawler({
-    requestQueue,
     maxConcurrency: MAX_CONCURRENCY,
     maxRequestsPerCrawl: MAX_LISTING_REQUESTS,
+
+    preNavigationHooks: [
+      async ({ page }) => {
+        await page.route("**/*", (route) => {
+          const resourceType = route.request().resourceType();
+
+          if (BLOCKED_RESOURCE_TYPES.has(resourceType)) {
+            return route.abort();
+          }
+
+          return route.continue();
+        });
+      }
+    ],
 
     async requestHandler({ page, request, log }) {
       log.info(`[DISCOVER LISTING] ${request.url}`);
@@ -288,7 +310,7 @@ export async function discoverFromListingPages(params: {
             url: normalized,
             sourceName: source.name,
             sourceCategory: source.category || null,
-            discoveryMethod: request.url.includes(new URL(baseUrl).hostname)
+            discoveryMethod: request.url.includes(baseHostname)
               ? "startUrl"
               : "archive"
           });
@@ -303,7 +325,7 @@ export async function discoverFromListingPages(params: {
     }
   });
 
-  await crawler.run();
+  await crawler.run(requests);
 
   return output;
 }

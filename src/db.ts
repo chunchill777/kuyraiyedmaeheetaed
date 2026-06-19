@@ -4,6 +4,25 @@ import fs from "fs";
 const DATA_DIR = "./data";
 const DB_PATH = `${DATA_DIR}/crawler.db`;
 
+type StatementCache = {
+  insertUrl?: any;
+  markUrlStatus?: any;
+  insertArticle?: any;
+};
+
+const statementCaches = new WeakMap<Database.Database, StatementCache>();
+
+function getStatementCache(db: Database.Database): StatementCache {
+  let cache = statementCaches.get(db);
+
+  if (!cache) {
+    cache = {};
+    statementCaches.set(db, cache);
+  }
+
+  return cache;
+}
+
 export type InsertUrlInput = {
   url: string;
   sourceName: string;
@@ -40,17 +59,21 @@ export function openDb() {
 }
 
 export function insertUrl(db: Database.Database, input: InsertUrlInput): boolean {
-  const stmt = db.prepare(`
-    INSERT OR IGNORE INTO urls (
-      url,
-      source_name,
-      source_category,
-      discovery_method
-    )
-    VALUES (?, ?, ?, ?)
-  `);
+  const cache = getStatementCache(db);
 
-  const result = stmt.run(
+  if (!cache.insertUrl) {
+    cache.insertUrl = db.prepare(`
+      INSERT OR IGNORE INTO urls (
+        url,
+        source_name,
+        source_category,
+        discovery_method
+      )
+      VALUES (?, ?, ?, ?)
+    `);
+  }
+
+  const result = cache.insertUrl.run(
     input.url,
     input.sourceName,
     input.sourceCategory,
@@ -58,6 +81,28 @@ export function insertUrl(db: Database.Database, input: InsertUrlInput): boolean
   );
 
   return result.changes > 0;
+}
+
+export function insertUrls(
+  db: Database.Database,
+  inputs: InsertUrlInput[]
+): { inserted: number; duplicated: number } {
+  let inserted = 0;
+
+  const tx = db.transaction((items: InsertUrlInput[]) => {
+    for (const input of items) {
+      if (insertUrl(db, input)) {
+        inserted++;
+      }
+    }
+  });
+
+  tx(inputs);
+
+  return {
+    inserted,
+    duplicated: inputs.length - inserted
+  };
 }
 
 export function getUrlStats(db: Database.Database) {
@@ -181,33 +226,43 @@ export function markUrlStatus(
   status: "pending" | "crawled" | "skipped" | "failed",
   failedReason?: string
 ) {
-  db.prepare(`
-    UPDATE urls
-    SET status = ?,
-        crawled_at = CURRENT_TIMESTAMP,
-        failed_reason = ?
-    WHERE id = ?
-  `).run(status, failedReason || null, id);
+  const cache = getStatementCache(db);
+
+  if (!cache.markUrlStatus) {
+    cache.markUrlStatus = db.prepare(`
+      UPDATE urls
+      SET status = ?,
+          crawled_at = CURRENT_TIMESTAMP,
+          failed_reason = ?
+      WHERE id = ?
+    `);
+  }
+
+  cache.markUrlStatus.run(status, failedReason || null, id);
 }
 
 export function insertArticle(
   db: Database.Database,
   input: InsertArticleInput
 ): boolean {
-  const stmt = db.prepare(`
-    INSERT OR IGNORE INTO articles (
-      url,
-      source_name,
-      source_category,
-      title,
-      published_date,
-      text,
-      content_hash
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
+  const cache = getStatementCache(db);
 
-  const result = stmt.run(
+  if (!cache.insertArticle) {
+    cache.insertArticle = db.prepare(`
+      INSERT OR IGNORE INTO articles (
+        url,
+        source_name,
+        source_category,
+        title,
+        published_date,
+        text,
+        content_hash
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+  }
+
+  const result = cache.insertArticle.run(
     input.url,
     input.sourceName,
     input.sourceCategory,

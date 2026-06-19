@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import { Source, DiscoveredUrl } from "./types";
-import { openDb, insertUrl, getUrlStats } from "./db";
+import { openDb, insertUrls, getUrlStats } from "./db";
 import {
   discoverFromSitemaps,
   buildArchiveUrls,
@@ -57,27 +57,25 @@ async function main() {
   let inserted = 0;
   let duplicated = 0;
 
+  const saveDiscoveredUrls = (items: DiscoveredUrl[]) => {
+    const result = insertUrls(db, items);
+    inserted += result.inserted;
+    duplicated += result.duplicated;
+  };
+
   // 1. Sitemap discovery
   console.log("\n[1/3] Discovering from sitemaps...");
   const sitemapUrls = await discoverFromSitemaps(source);
   console.log(`Sitemap URLs discovered: ${sitemapUrls.length}`);
 
-  for (const item of sitemapUrls) {
-    const ok = insertUrl(db, item);
-    if (ok) inserted++;
-    else duplicated++;
-  }
+  saveDiscoveredUrls(sitemapUrls);
 
   // 2. Monthly archive URLs
   console.log("\n[2/3] Building monthly archive URLs...");
   const archiveListingUrls = buildArchiveUrls(source, DAYS_BACK);
   console.log(`Archive listing URLs generated: ${archiveListingUrls.length}`);
 
-  for (const item of archiveListingUrls) {
-    const ok = insertUrl(db, item);
-    if (ok) inserted++;
-    else duplicated++;
-  }
+  saveDiscoveredUrls(archiveListingUrls);
 
   // 3. Discover article links from startUrls + archive listing pages
   console.log("\n[3/3] Discovering links from startUrls/archive pages...");
@@ -94,11 +92,7 @@ async function main() {
 
   console.log(`Listing page links discovered: ${listingDiscovered.length}`);
 
-  for (const item of listingDiscovered) {
-    const ok = insertUrl(db, item);
-    if (ok) inserted++;
-    else duplicated++;
-  }
+  saveDiscoveredUrls(listingDiscovered);
 
   const stats = getUrlStats(db);
 

@@ -14,75 +14,99 @@ const FILTER_MODE = process.env.FILTER_MODE || "balanced";
 
 const DRY_RUN = process.env.DRY_RUN === "true";
 
+const BLOCKED_URL_PARTS = [
+  "/login",
+  "/signin",
+  "/signup",
+  "/subscribe",
+  "/subscription",
+  "/privacy",
+  "/terms",
+  "/about",
+  "/contact",
+  "/advertise",
+  "/newsletter",
+  "/author/",
+  "/authors/",
+  "/tag/",
+  "/tags/",
+  "/category/",
+  "/categories/",
+  "/video",
+  "/videos",
+  "/podcast",
+  "/podcasts",
+  "/events",
+  "/event",
+  "/careers",
+  "/jobs",
+  "/shop",
+  "/cart",
+  "/account",
+  "/search",
+  "?s=",
+  "/?s=",
+
+  "/sponsor/",
+  "/sponsored/",
+  "/press-release/",
+  "/partner/",
+  "/brand-studio/",
+  "/advertorial/",
+  "/deals/",
+  "/coupon/",
+  "/gallery/",
+  "/web-stories/"
+];
+const BLOCKED_URL_EXTENSIONS = [
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".gif",
+  ".webp",
+  ".svg",
+  ".pdf",
+  ".zip",
+  ".mp4",
+  ".mp3",
+  ".avi",
+  ".mov",
+  ".css",
+  ".js",
+  ".ico",
+  ".xml"
+];
+const ARTICLE_HINTS = [
+  "/news/",
+  "/article/",
+  "/articles/",
+  "/story/",
+  "/stories/",
+  "/research/",
+  "/report/",
+  "/reports/",
+  "/blog/"
+];
+const STRONG_ARTICLE_HINTS = [
+  "/news/",
+  "/article/",
+  "/articles/",
+  "/story/",
+  "/stories/",
+  "/research/",
+  "/report/",
+  "/reports/",
+  "/blog/",
+  "/post/",
+  "/posts/",
+  "/resources/"
+];
+
 function isBlockedUrl(url: string): boolean {
   const u = url.toLowerCase();
 
-  const blockedParts = [
-    "/login",
-    "/signin",
-    "/signup",
-    "/subscribe",
-    "/subscription",
-    "/privacy",
-    "/terms",
-    "/about",
-    "/contact",
-    "/advertise",
-    "/newsletter",
-    "/author/",
-    "/authors/",
-    "/tag/",
-    "/tags/",
-    "/category/",
-    "/categories/",
-    "/video",
-    "/videos",
-    "/podcast",
-    "/podcasts",
-    "/events",
-    "/event",
-    "/careers",
-    "/jobs",
-    "/shop",
-    "/cart",
-    "/account",
-    "/search",
-    "?s=",
-    "/?s=",
-
-    "/sponsor/",
-    "/sponsored/",
-    "/press-release/",
-    "/partner/",
-    "/brand-studio/",
-    "/advertorial/",
-    "/deals/",
-    "/coupon/",
-    "/gallery/",
-    "/web-stories/"
-  ];
-
-  const blockedExtensions = [
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".gif",
-    ".webp",
-    ".svg",
-    ".pdf",
-    ".zip",
-    ".mp4",
-    ".mp3",
-    ".avi",
-    ".mov",
-    ".css",
-    ".js",
-    ".ico",
-    ".xml"
-  ];
-
-  if (blockedParts.some((part) => u.includes(part))) return true;
-  if (blockedExtensions.some((ext) => u.endsWith(ext))) return true;
+  if (BLOCKED_URL_PARTS.some((part) => u.includes(part))) return true;
+  if (BLOCKED_URL_EXTENSIONS.some((ext) => u.endsWith(ext))) return true;
   if (u.includes("#")) return true;
   if (u.startsWith("mailto:")) return true;
   if (u.startsWith("tel:")) return true;
@@ -124,19 +148,7 @@ function isLikelyArticleUrl(url: string): boolean {
   }
 
   // บางเว็บใช้ path แบบ /news/... /article/... /research/...
-  const articleHints = [
-    "/news/",
-    "/article/",
-    "/articles/",
-    "/story/",
-    "/stories/",
-    "/research/",
-    "/report/",
-    "/reports/",
-    "/blog/"
-  ];
-
-  if (articleHints.some((hint) => path.includes(hint)) && last.length >= 12) {
+  if (ARTICLE_HINTS.some((hint) => path.includes(hint)) && last.length >= 12) {
     return true;
   }
 
@@ -262,23 +274,8 @@ function isUltraArticleUrl(url: string): boolean {
   const last = segments[segments.length - 1] || "";
   const hyphenCount = (last.match(/-/g) || []).length;
 
-  const strongArticleHints = [
-    "/news/",
-    "/article/",
-    "/articles/",
-    "/story/",
-    "/stories/",
-    "/research/",
-    "/report/",
-    "/reports/",
-    "/blog/",
-    "/post/",
-    "/posts/",
-    "/resources/"
-  ];
-
   if (
-    strongArticleHints.some((hint) => path.includes(hint)) &&
+    STRONG_ARTICLE_HINTS.some((hint) => path.includes(hint)) &&
     last.length >= 20 &&
     hyphenCount >= 2
   ) {

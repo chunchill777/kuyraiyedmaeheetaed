@@ -107,6 +107,50 @@ const STEEP_KEYWORDS: Record<SteepCategory, string[]> = {
   ]
 };
 
+const STEEP_CATEGORIES = Object.keys(STEEP_KEYWORDS) as SteepCategory[];
+const KEYWORD_STOP_WORDS = new Set([
+  "of",
+  "and",
+  "the",
+  "for",
+  "in",
+  "to",
+  "from",
+  "through",
+  "with",
+  "a",
+  "an",
+  "total",
+  "level",
+  "rate",
+  "rates"
+]);
+
+function buildKeywordTokens(keywords: string[]): string[] {
+  const tokens = new Set<string>();
+
+  for (const keyword of keywords) {
+    const words = normalizeText(keyword)
+      .split(" ")
+      .filter((w) => w.length >= 4 && !KEYWORD_STOP_WORDS.has(w));
+
+    for (const word of words) {
+      tokens.add(word);
+    }
+  }
+
+  return Array.from(tokens);
+}
+
+const KEYWORD_TOKENS_BY_CATEGORY = STEEP_CATEGORIES.reduce((acc, category) => {
+  acc[category] = buildKeywordTokens(STEEP_KEYWORDS[category]);
+  return acc;
+}, {} as Record<SteepCategory, string[]>);
+
+const ALL_KEYWORD_TOKENS = Array.from(
+  new Set(STEEP_CATEGORIES.flatMap((category) => KEYWORD_TOKENS_BY_CATEGORY[category]))
+);
+
 function normalizeCategory(category?: string | null): SteepCategory | null {
   if (!category) return null;
 
@@ -178,43 +222,24 @@ function getScopesForArticle(article: ArticleRow): {
   }));
 }
 
-function getKeywordTokens(scopes: { keywords: string[] }[]): string[] {
-  const stopWords = new Set([
-    "of",
-    "and",
-    "the",
-    "for",
-    "in",
-    "to",
-    "from",
-    "through",
-    "with",
-    "a",
-    "an",
-    "total",
-    "level",
-    "rate",
-    "rates"
-  ]);
-
-  const tokens = new Set<string>();
-
-  for (const scope of scopes) {
-    for (const keyword of scope.keywords) {
-      const words = normalizeText(keyword)
-        .split(" ")
-        .filter((w) => w.length >= 4 && !stopWords.has(w));
-
-      for (const word of words) {
-        tokens.add(word);
-      }
-    }
+function getKeywordTokens(
+  scopes: { category: SteepCategory; keywords: string[] }[]
+): string[] {
+  if (scopes.length === 1) {
+    return KEYWORD_TOKENS_BY_CATEGORY[scopes[0].category];
   }
 
-  return Array.from(tokens);
+  if (scopes.length === STEEP_CATEGORIES.length) {
+    return ALL_KEYWORD_TOKENS;
+  }
+
+  return Array.from(new Set(scopes.flatMap((scope) => buildKeywordTokens(scope.keywords))));
 }
 
-function keywordPrefilter(article: ArticleRow, scopes: { keywords: string[] }[]) {
+function keywordPrefilter(
+  article: ArticleRow,
+  scopes: { category: SteepCategory; keywords: string[] }[]
+) {
   if (!USE_KEYWORD_PREFILTER) return true;
 
   const tokens = getKeywordTokens(scopes);
@@ -379,6 +404,40 @@ function ensurePhase3Tables(db: any) {
   `);
 }
 
+type ClassificationStatements = {
+  markClassification: any;
+  deleteMatches: any;
+  insertMatch: any;
+};
+
+function prepareClassificationStatements(db: any): ClassificationStatements {
+  return {
+    markClassification: db.prepare(`
+      INSERT OR REPLACE INTO article_classifications (
+        article_id,
+        is_news_article,
+        is_relevant,
+        reason,
+        model
+      )
+      VALUES (?, ?, ?, ?, ?)
+    `),
+    deleteMatches: db.prepare(`DELETE FROM matches WHERE article_id = ?`),
+    insertMatch: db.prepare(`
+      INSERT OR IGNORE INTO matches (
+        article_id,
+        url,
+        source_name,
+        category,
+        keyword,
+        reason,
+        model
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `)
+  };
+}
+
 function getArticlesToClassify(db: any): ArticleRow[] {
   if (TEST_SOURCE_NAME) {
     return db
@@ -426,17 +485,12 @@ function getArticlesToClassify(db: any): ArticleRow[] {
     .all(CLASSIFY_LIMIT) as ArticleRow[];
 }
 
-function markClassification(db: any, articleId: number, result: LlmResult) {
-  db.prepare(`
-    INSERT OR REPLACE INTO article_classifications (
-      article_id,
-      is_news_article,
-      is_relevant,
-      reason,
-      model
-    )
-    VALUES (?, ?, ?, ?, ?)
-  `).run(
+function markClassification(
+  statements: ClassificationStatements,
+  articleId: number,
+  result: LlmResult
+) {
+  statements.markClassification.run(
     articleId,
     result.isNewsArticle ? 1 : 0,
     result.isRelevant ? 1 : 0,
@@ -458,28 +512,21 @@ function findCategoryForKeyword(
   return null;
 }
 
-function saveMatches(db: any, article: ArticleRow, result: LlmResult) {
+function saveMatches(
+  statements: ClassificationStatements,
+  article: ArticleRow,
+  result: LlmResult
+) {
   const scopes = getScopesForArticle(article);
 
-  db.prepare(`DELETE FROM matches WHERE article_id = ?`).run(article.id);
+  statements.deleteMatches.run(article.id);
 
   for (const keyword of result.matchedKeywords) {
     const category = findCategoryForKeyword(keyword, scopes);
 
     if (!category) continue;
 
-    db.prepare(`
-      INSERT OR IGNORE INTO matches (
-        article_id,
-        url,
-        source_name,
-        category,
-        keyword,
-        reason,
-        model
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    statements.insertMatch.run(
       article.id,
       article.url,
       article.source_name,
@@ -580,6 +627,7 @@ async function exportKnowledgeText(db: any) {
 async function main() {
   const db = openDb();
   ensurePhase3Tables(db);
+  const statements = prepareClassificationStatements(db);
 
   const fromDate = getFromDate(DAYS_BACK);
   const articles = getArticlesToClassify(db);
@@ -605,7 +653,7 @@ async function main() {
     if (!isDateAccepted(article.published_date, fromDate)) {
       skippedByDate++;
 
-      markClassification(db, article.id, {
+      markClassification(statements, article.id, {
         isNewsArticle: true,
         isRelevant: false,
         matchedKeywords: [],
@@ -621,7 +669,7 @@ async function main() {
     if (!keywordPrefilter(article, scopes)) {
       skippedByPrefilter++;
 
-      markClassification(db, article.id, {
+      markClassification(statements, article.id, {
         isNewsArticle: true,
         isRelevant: false,
         matchedKeywords: [],
@@ -646,10 +694,10 @@ async function main() {
       };
     }
 
-    markClassification(db, article.id, result);
+    markClassification(statements, article.id, result);
 
     if (result.isNewsArticle && result.isRelevant) {
-      saveMatches(db, article, result);
+      saveMatches(statements, article, result);
       relevantThisRun++;
       console.log(`[MATCH] ${result.matchedKeywords.join(", ")}`);
     } else {
