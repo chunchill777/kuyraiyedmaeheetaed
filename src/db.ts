@@ -220,6 +220,55 @@ export function getPendingUrls(
     .all(limit) as PendingUrl[];
 }
 
+export function getPendingUrlsForDomains(
+  db: Database.Database,
+  limit: number,
+  domains: string[],
+  sourceName?: string
+): PendingUrl[] {
+  const normalizedDomains = domains.map((domain) => domain.toLowerCase());
+  const domainWhere = normalizedDomains
+    .map(() => "lower(url) LIKE ?")
+    .join(" OR ");
+  const domainOrder = normalizedDomains
+    .map((_, index) => `WHEN lower(url) LIKE ? THEN ${index}`)
+    .join("\n");
+  const sourceWhere = sourceName ? "AND source_name LIKE ?" : "";
+  const whereParams = normalizedDomains.map((domain) => `%${domain}%`);
+  const orderParams = normalizedDomains.map((domain) => `%${domain}%`);
+  const params = sourceName
+    ? [...whereParams, `%${sourceName}%`, ...orderParams, limit]
+    : [...whereParams, ...orderParams, limit];
+
+  return db
+    .prepare(`
+      SELECT id, url, source_name, source_category
+      FROM urls
+      WHERE status = 'pending'
+        AND (${domainWhere})
+        ${sourceWhere}
+      ORDER BY
+        CASE
+          ${domainOrder}
+          ELSE ${normalizedDomains.length}
+        END,
+        CASE
+          WHEN url LIKE '%/2026/%' THEN 0
+          WHEN url LIKE '%/2025/%' THEN 0
+          WHEN url LIKE '%/news/%' THEN 1
+          WHEN url LIKE '%/article/%' THEN 1
+          WHEN url LIKE '%/articles/%' THEN 1
+          WHEN url LIKE '%/research/%' THEN 1
+          WHEN url LIKE '%/report/%' THEN 1
+          WHEN url LIKE '%/blog/%' THEN 1
+          ELSE 2
+        END,
+        id ASC
+      LIMIT ?
+    `)
+    .all(...params) as PendingUrl[];
+}
+
 export function markUrlStatus(
   db: Database.Database,
   id: number,

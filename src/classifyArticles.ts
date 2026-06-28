@@ -30,13 +30,62 @@ const OUTPUT_TEXT_PATH = `${OUTPUT_DIR}/results.txt`;
 
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "qwen3:8b";
 const OLLAMA_URL = "http://localhost:11434/api/generate";
+const CLASSIFIER_VERSION = "kb-v2";
+const CLASSIFIER_MODEL = `${OLLAMA_MODEL}:${CLASSIFIER_VERSION}`;
 
 const TEST_SOURCE_NAME = process.env.TEST_SOURCE_NAME || "";
 const CLASSIFY_LIMIT = Number(process.env.CLASSIFY_LIMIT || 50);
 const DAYS_BACK = Number(process.env.DAYS_BACK || 180);
 
-const ALLOW_UNKNOWN_DATE = process.env.ALLOW_UNKNOWN_DATE === "true";
-const USE_KEYWORD_PREFILTER = process.env.USE_KEYWORD_PREFILTER !== "false";
+const ALLOW_UNKNOWN_DATE = process.env.ALLOW_UNKNOWN_DATE !== "false";
+const USE_DATE_FILTER = process.env.USE_DATE_FILTER !== "false";
+const USE_KEYWORD_PREFILTER = process.env.USE_KEYWORD_PREFILTER === "true";
+const USE_PRIORITY_SOURCES = process.env.USE_PRIORITY_SOURCES !== "false";
+const USE_SOURCE_CATEGORY_SCOPE =
+  process.env.USE_SOURCE_CATEGORY_SCOPE === "true";
+
+const PRIORITY_DOMAINS = [
+  "nextbigfuture.com",
+  "scitechdaily.com",
+  "venturebeat.com",
+  "quantumrun.com",
+  "futurity.org",
+  "pewresearch.org",
+  "trendwatching.com",
+  "ourworldindata.org",
+  "worldbank.org",
+  "brookings.edu",
+  "piie.com",
+  "project-syndicate.org",
+  "cepr.org",
+  "techcrunch.com",
+  "spectrum.ieee.org",
+  "restofworld.org",
+  "iea.org",
+  "resilience.org",
+  "wired.com"
+];
+const ERROR_PAGE_TITLE_PARTS = [
+  "404",
+  "page not found",
+  "not found",
+  "access denied",
+  "forbidden",
+  "service unavailable",
+  "bad gateway"
+];
+const ERROR_PAGE_TEXT_PARTS = [
+  "404 - page not found",
+  "404 page not found",
+  "the page you requested could not be found",
+  "the page you are looking for could not be found",
+  "sorry, the page you are looking for does not exist",
+  "this page could not be found",
+  "access denied",
+  "403 forbidden",
+  "service unavailable",
+  "bad gateway"
+];
 
 const STEEP_KEYWORDS: Record<SteepCategory, string[]> = {
   social: [
@@ -184,6 +233,8 @@ function parseDate(raw: string | null): Date | null {
 }
 
 function isDateAccepted(publishedDate: string | null, fromDate: Date): boolean {
+  if (!USE_DATE_FILTER) return true;
+
   const date = parseDate(publishedDate);
 
   if (!date) return ALLOW_UNKNOWN_DATE;
@@ -207,7 +258,7 @@ function getScopesForArticle(article: ArticleRow): {
 }[] {
   const category = normalizeCategory(article.source_category);
 
-  if (category) {
+  if (USE_SOURCE_CATEGORY_SCOPE && category) {
     return [
       {
         category,
@@ -246,6 +297,20 @@ function keywordPrefilter(
   const text = normalizeText(`${article.title}\n${article.text}`);
 
   return tokens.some((token) => text.includes(token));
+}
+
+function isObviousErrorPage(article: ArticleRow): boolean {
+  const title = normalizeText(article.title);
+  const textStart = normalizeText(article.text).slice(0, 1000);
+
+  if (
+    ERROR_PAGE_TITLE_PARTS.some((part) => title.includes(part)) &&
+    title.length <= 80
+  ) {
+    return true;
+  }
+
+  return ERROR_PAGE_TEXT_PARTS.some((part) => textStart.includes(part));
 }
 
 function safeJsonParse(text: string): LlmResult {
@@ -306,19 +371,23 @@ async function classifyWithLocalLlm(article: ArticleRow): Promise<LlmResult> {
   const slicedText = article.text.slice(0, 7000);
 
   const prompt = `
-You are a STEEP news classifier.
+You are a STEEP knowledge-base classifier for an AI agent.
 
 Task:
 1. Decide whether this page is a real news/article page.
-2. Decide whether it is relevant to any STEEP keyword.
+2. Decide whether it is useful knowledge for any STEEP dimension.
 3. Return only valid JSON.
 
 Rules:
 - isNewsArticle should be true only for actual news articles, reports, blog articles, research/news posts, or analysis articles.
 - isNewsArticle should be false for homepages, category pages, tag pages, search pages, author pages, login pages, newsletters, ads, privacy pages, and event listing pages.
-- isRelevant should be true only if the article meaningfully relates to at least one keyword.
+- Prefer recall over precision. This output feeds an AI-agent knowledge base.
+- isRelevant should be true if the article gives useful strategic context, evidence, signals, forecasts, policy/economic/social/technology/environment information, or analysis related to any STEEP dimension.
+- Do not require the exact keyword phrase to appear in the text.
+- If an article is relevant, choose the closest matching keywords from the provided keyword list.
 - matchedKeywords must contain only keywords from the provided keyword list.
 - Do not invent keywords.
+- If relevant, matchedKeywords should not be empty unless no provided keyword is even loosely related.
 - If not relevant, matchedKeywords must be [].
 
 Allowed keywords:
@@ -438,7 +507,37 @@ function prepareClassificationStatements(db: any): ClassificationStatements {
   };
 }
 
+function getPrioritySqlParts() {
+  const domainWhere = PRIORITY_DOMAINS.map(() => "lower(a.url) LIKE ?").join(
+    " OR "
+  );
+  const domainOrder = PRIORITY_DOMAINS.map(
+    (_, index) => `WHEN lower(a.url) LIKE ? THEN ${index}`
+  ).join("\n");
+  const whereParams = PRIORITY_DOMAINS.map((domain) => `%${domain}%`);
+  const orderParams = PRIORITY_DOMAINS.map((domain) => `%${domain}%`);
+
+  return {
+    domainWhere,
+    domainOrder,
+    whereParams,
+    orderParams
+  };
+}
+
 function getArticlesToClassify(db: any): ArticleRow[] {
+  const priority = USE_PRIORITY_SOURCES ? getPrioritySqlParts() : null;
+  const priorityWhere = priority ? `AND (${priority.domainWhere})` : "";
+  const priorityOrder = priority
+    ? `
+        CASE
+          ${priority.domainOrder}
+          ELSE ${PRIORITY_DOMAINS.length}
+        END,`
+    : "";
+  const baseParams = priority ? priority.whereParams : [];
+  const orderParams = priority ? priority.orderParams : [];
+
   if (TEST_SOURCE_NAME) {
     return db
       .prepare(`
@@ -452,15 +551,27 @@ function getArticlesToClassify(db: any): ArticleRow[] {
           a.text
         FROM articles a
         WHERE a.source_name LIKE ?
+          ${priorityWhere}
           AND NOT EXISTS (
             SELECT 1
             FROM article_classifications c
             WHERE c.article_id = a.id
+              AND c.model = ?
           )
-        ORDER BY a.id ASC
+        ORDER BY
+          ${priorityOrder}
+          CASE WHEN a.published_date IS NULL THEN 1 ELSE 0 END,
+          a.published_date DESC,
+          a.id ASC
         LIMIT ?
       `)
-      .all(`%${TEST_SOURCE_NAME}%`, CLASSIFY_LIMIT) as ArticleRow[];
+      .all(
+        `%${TEST_SOURCE_NAME}%`,
+        ...baseParams,
+        CLASSIFIER_MODEL,
+        ...orderParams,
+        CLASSIFY_LIMIT
+      ) as ArticleRow[];
   }
 
   return db
@@ -478,11 +589,22 @@ function getArticlesToClassify(db: any): ArticleRow[] {
         SELECT 1
         FROM article_classifications c
         WHERE c.article_id = a.id
+          AND c.model = ?
       )
-      ORDER BY a.id ASC
+        ${priorityWhere}
+      ORDER BY
+        ${priorityOrder}
+        CASE WHEN a.published_date IS NULL THEN 1 ELSE 0 END,
+        a.published_date DESC,
+        a.id ASC
       LIMIT ?
     `)
-    .all(CLASSIFY_LIMIT) as ArticleRow[];
+    .all(
+      CLASSIFIER_MODEL,
+      ...baseParams,
+      ...orderParams,
+      CLASSIFY_LIMIT
+    ) as ArticleRow[];
 }
 
 function markClassification(
@@ -490,12 +612,16 @@ function markClassification(
   articleId: number,
   result: LlmResult
 ) {
+  if (!result.isNewsArticle || !result.isRelevant) {
+    statements.deleteMatches.run(articleId);
+  }
+
   statements.markClassification.run(
     articleId,
     result.isNewsArticle ? 1 : 0,
     result.isRelevant ? 1 : 0,
     result.reason || null,
-    OLLAMA_MODEL
+    CLASSIFIER_MODEL
   );
 }
 
@@ -533,7 +659,7 @@ function saveMatches(
       category,
       keyword,
       result.reason || null,
-      OLLAMA_MODEL
+      CLASSIFIER_MODEL
     );
   }
 }
@@ -541,6 +667,15 @@ function saveMatches(
 function getStats(db: any) {
   const classified = db
     .prepare(`SELECT COUNT(*) as count FROM article_classifications`)
+    .get() as { count: number };
+
+  const relevant = db
+    .prepare(`
+      SELECT COUNT(*) as count
+      FROM article_classifications
+      WHERE is_news_article = 1
+        AND is_relevant = 1
+    `)
     .get() as { count: number };
 
   const matched = db.prepare(`SELECT COUNT(*) as count FROM matches`).get() as {
@@ -553,6 +688,7 @@ function getStats(db: any) {
 
   return {
     classified: classified.count,
+    relevant: relevant.count,
     matches: matched.count,
     matchedArticles: matchedArticles.count
   };
@@ -576,16 +712,22 @@ async function exportKnowledgeText(db: any) {
       SELECT
         a.id,
         a.source_name,
-        m.category,
+        COALESCE(m.category, a.source_category, 'general') as category,
         a.title,
         a.published_date,
         a.url,
-        GROUP_CONCAT(DISTINCT m.keyword) as matched_keywords,
-        MAX(m.reason) as reason,
+        COALESCE(
+          GROUP_CONCAT(DISTINCT m.keyword),
+          'General STEEP relevance'
+        ) as matched_keywords,
+        COALESCE(MAX(m.reason), c.reason) as reason,
         a.text
-      FROM matches m
-      JOIN articles a ON a.id = m.article_id
-      GROUP BY a.id, m.category
+      FROM article_classifications c
+      JOIN articles a ON a.id = c.article_id
+      LEFT JOIN matches m ON m.article_id = a.id
+      WHERE c.is_news_article = 1
+        AND c.is_relevant = 1
+      GROUP BY a.id, COALESCE(m.category, a.source_category, 'general')
       ORDER BY a.published_date DESC
     `)
     .all() as ExportRow[];
@@ -595,7 +737,7 @@ async function exportKnowledgeText(db: any) {
   if (rows.length === 0) {
     await fs.writeFile(
       OUTPUT_TEXT_PATH,
-      "No matched articles found.\n",
+      "No relevant knowledge-base articles found.\n",
       "utf-8"
     );
     return;
@@ -634,21 +776,42 @@ async function main() {
 
   console.log("Starting Phase 3: LLM Classification + Export");
   console.log(`Model: ${OLLAMA_MODEL}`);
+  console.log(`Classifier version: ${CLASSIFIER_VERSION}`);
   console.log(`Source filter: ${TEST_SOURCE_NAME || "all"}`);
+  console.log(`Priority sources only: ${USE_PRIORITY_SOURCES}`);
   console.log(`Classify limit: ${CLASSIFY_LIMIT}`);
   console.log(`Days back: ${DAYS_BACK}`);
   console.log(`From date: ${fromDate.toISOString()}`);
+  console.log(`Use date filter: ${USE_DATE_FILTER}`);
+  console.log(`Allow unknown date: ${ALLOW_UNKNOWN_DATE}`);
   console.log(`Use keyword prefilter: ${USE_KEYWORD_PREFILTER}`);
+  console.log(`Use source category scope: ${USE_SOURCE_CATEGORY_SCOPE}`);
   console.log(`Articles selected: ${articles.length}`);
 
   let classifiedThisRun = 0;
   let skippedByDate = 0;
   let skippedByPrefilter = 0;
+  let skippedByErrorPage = 0;
   let relevantThisRun = 0;
   let llmCalls = 0;
 
   for (const article of articles) {
     console.log(`\n[ARTICLE] ${article.title}`);
+
+    if (isObviousErrorPage(article)) {
+      skippedByErrorPage++;
+
+      markClassification(statements, article.id, {
+        isNewsArticle: false,
+        isRelevant: false,
+        matchedKeywords: [],
+        reason: "Skipped obvious error page before LLM."
+      });
+
+      classifiedThisRun++;
+      console.log("Skipped obvious error page before LLM.");
+      continue;
+    }
 
     if (!isDateAccepted(article.published_date, fromDate)) {
       skippedByDate++;
@@ -660,6 +823,7 @@ async function main() {
         reason: "Skipped because published date is outside range or unknown."
       });
 
+      classifiedThisRun++;
       console.log("Skipped by date.");
       continue;
     }
@@ -676,6 +840,7 @@ async function main() {
         reason: "Skipped by keyword prefilter."
       });
 
+      classifiedThisRun++;
       console.log("Skipped by keyword prefilter.");
       continue;
     }
@@ -713,11 +878,13 @@ async function main() {
 
   console.log("\nDone Phase 3.");
   console.log(`Classified this run: ${classifiedThisRun}`);
+  console.log(`Skipped by error page: ${skippedByErrorPage}`);
   console.log(`Skipped by date: ${skippedByDate}`);
   console.log(`Skipped by prefilter: ${skippedByPrefilter}`);
   console.log(`LLM calls: ${llmCalls}`);
   console.log(`Relevant this run: ${relevantThisRun}`);
   console.log(`Total classified in DB: ${stats.classified}`);
+  console.log(`Total relevant KB articles: ${stats.relevant}`);
   console.log(`Total matched articles: ${stats.matchedArticles}`);
   console.log(`Total keyword matches: ${stats.matches}`);
   console.log(`Saved: ${OUTPUT_TEXT_PATH}`);

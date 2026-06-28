@@ -6,6 +6,7 @@ import {
   openDb,
   ensureArticleTables,
   getPendingUrls,
+  getPendingUrlsForDomains,
   markUrlStatus,
   insertArticle,
   getArticleStats
@@ -14,8 +15,30 @@ import {
 const CRAWL_LIMIT = Number(process.env.CRAWL_LIMIT || 100);
 const MAX_CONCURRENCY = Number(process.env.MAX_CONCURRENCY || 2);
 const TEST_SOURCE_NAME = process.env.TEST_SOURCE_NAME || "";
+const USE_PRIORITY_QUEUE = process.env.USE_PRIORITY_QUEUE !== "false";
 
 const MIN_TEXT_LENGTH = Number(process.env.MIN_TEXT_LENGTH || 500);
+const PRIORITY_DOMAINS = [
+  "nextbigfuture.com",
+  "scitechdaily.com",
+  "venturebeat.com",
+  "quantumrun.com",
+  "futurity.org",
+  "pewresearch.org",
+  "trendwatching.com",
+  "ourworldindata.org",
+  "worldbank.org",
+  "brookings.edu",
+  "piie.com",
+  "project-syndicate.org",
+  "cepr.org",
+  "techcrunch.com",
+  "spectrum.ieee.org",
+  "restofworld.org",
+  "iea.org",
+  "resilience.org",
+  "wired.com"
+];
 const BLOCKED_RESOURCE_TYPES = new Set([
   "image",
   "media",
@@ -54,6 +77,27 @@ const ARTICLE_BLOCKED_EXTENSIONS = [
   ".mp3",
   ".css",
   ".js"
+];
+const ERROR_PAGE_TITLE_PARTS = [
+  "404",
+  "page not found",
+  "not found",
+  "access denied",
+  "forbidden",
+  "service unavailable",
+  "bad gateway"
+];
+const ERROR_PAGE_TEXT_PARTS = [
+  "404 - page not found",
+  "404 page not found",
+  "the page you requested could not be found",
+  "the page you are looking for could not be found",
+  "sorry, the page you are looking for does not exist",
+  "this page could not be found",
+  "access denied",
+  "403 forbidden",
+  "service unavailable",
+  "bad gateway"
 ];
 
 function cleanText(text: string): string {
@@ -161,21 +205,41 @@ async function extractPageData(page: any, url: string) {
   };
 }
 
+function isObviousErrorPage(title: string, text: string): boolean {
+  const normalizedTitle = cleanText(title).toLowerCase();
+  const normalizedTextStart = cleanText(text).toLowerCase().slice(0, 1000);
+
+  if (
+    ERROR_PAGE_TITLE_PARTS.some((part) => normalizedTitle.includes(part)) &&
+    normalizedTitle.length <= 80
+  ) {
+    return true;
+  }
+
+  return ERROR_PAGE_TEXT_PARTS.some((part) =>
+    normalizedTextStart.includes(part)
+  );
+}
+
 async function main() {
   const db = openDb();
   ensureArticleTables(db);
 
-  const pendingUrls = getPendingUrls(
-    db,
-    CRAWL_LIMIT,
-    TEST_SOURCE_NAME || undefined
-  );
+  const pendingUrls = USE_PRIORITY_QUEUE
+    ? getPendingUrlsForDomains(
+        db,
+        CRAWL_LIMIT,
+        PRIORITY_DOMAINS,
+        TEST_SOURCE_NAME || undefined
+      )
+    : getPendingUrls(db, CRAWL_LIMIT, TEST_SOURCE_NAME || undefined);
 
   console.log("Starting Phase 2: Crawl Articles");
   console.log(`Pending selected: ${pendingUrls.length}`);
   console.log(`Crawl limit: ${CRAWL_LIMIT}`);
   console.log(`Max concurrency: ${MAX_CONCURRENCY}`);
   console.log(`Source filter: ${TEST_SOURCE_NAME || "all"}`);
+  console.log(`Priority queue only: ${USE_PRIORITY_QUEUE}`);
 
   if (pendingUrls.length === 0) {
     console.log("No pending URLs to crawl.");
@@ -236,6 +300,17 @@ async function main() {
 
       try {
         const pageData = await extractPageData(page, request.url);
+
+        if (isObviousErrorPage(pageData.title, pageData.text)) {
+          skipped++;
+          markUrlStatus(
+            db,
+            id,
+            "skipped",
+            `Skipped obvious error page: ${pageData.title || "Untitled"}`
+          );
+          return;
+        }
 
         if (!pageData.title || pageData.text.length < MIN_TEXT_LENGTH) {
           skipped++;
@@ -307,6 +382,18 @@ async function main() {
 
 function shouldSkipArticleUrl(url: string): boolean {
   const u = url.toLowerCase();
+
+  try {
+    const path = new URL(url).pathname.replace(/\/+$/, "");
+    const parts = path.split("/").filter(Boolean);
+    const lastThree = parts.slice(-3).join("/");
+
+    if (/^20\d{2}\/\d{2}\/\d{2}$/.test(lastThree)) {
+      return true;
+    }
+  } catch {
+    return true;
+  }
 
   if (ARTICLE_BLOCKED_PARTS.some((part) => u.includes(part))) {
     return true;

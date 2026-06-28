@@ -400,6 +400,94 @@
     "sitemapUrls": ["https://www.quantumrun.com/sitemap.xml"]
   },
   {
+    "name": "SciTechDaily",
+    "category": "technology",
+    "baseUrl": "https://scitechdaily.com",
+    "startUrls": ["https://scitechdaily.com", "https://scitechdaily.com/news/technology/", "https://scitechdaily.com/news/science/"],
+    "archiveUrlTemplates": ["https://scitechdaily.com/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://scitechdaily.com/sitemap.xml", "https://scitechdaily.com/post-sitemap.xml"]
+  },
+  {
+    "name": "Pew Research Center",
+    "category": "social",
+    "baseUrl": "https://www.pewresearch.org",
+    "startUrls": ["https://www.pewresearch.org", "https://www.pewresearch.org/short-reads/", "https://www.pewresearch.org/topic/internet-technology/"],
+    "archiveUrlTemplates": ["https://www.pewresearch.org/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://www.pewresearch.org/sitemap.xml"]
+  },
+  {
+    "name": "Our World in Data",
+    "category": "social",
+    "baseUrl": "https://ourworldindata.org",
+    "startUrls": ["https://ourworldindata.org/latest", "https://ourworldindata.org"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://ourworldindata.org/sitemap.xml"]
+  },
+  {
+    "name": "World Bank Blogs",
+    "category": "economic",
+    "baseUrl": "https://blogs.worldbank.org",
+    "startUrls": ["https://blogs.worldbank.org/en/home"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://blogs.worldbank.org/sitemap.xml"]
+  },
+  {
+    "name": "Brookings",
+    "category": "political",
+    "baseUrl": "https://www.brookings.edu",
+    "startUrls": ["https://www.brookings.edu", "https://www.brookings.edu/articles/", "https://www.brookings.edu/research/"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.brookings.edu/sitemap.xml"]
+  },
+  {
+    "name": "PIIE Realtime Economics",
+    "category": "economic",
+    "baseUrl": "https://www.piie.com",
+    "startUrls": ["https://www.piie.com/blogs/realtime-economics"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.piie.com/sitemap.xml"]
+  },
+  {
+    "name": "Project Syndicate",
+    "category": "economic",
+    "baseUrl": "https://www.project-syndicate.org",
+    "startUrls": ["https://www.project-syndicate.org"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.project-syndicate.org/sitemap.xml"]
+  },
+  {
+    "name": "CEPR VoxEU",
+    "category": "economic",
+    "baseUrl": "https://cepr.org",
+    "startUrls": ["https://cepr.org/voxeu"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://cepr.org/sitemap.xml"]
+  },
+  {
+    "name": "IEEE Spectrum",
+    "category": "technology",
+    "baseUrl": "https://spectrum.ieee.org",
+    "startUrls": ["https://spectrum.ieee.org"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://spectrum.ieee.org/sitemap.xml"]
+  },
+  {
+    "name": "Rest of World",
+    "category": "technology",
+    "baseUrl": "https://restofworld.org",
+    "startUrls": ["https://restofworld.org"],
+    "archiveUrlTemplates": ["https://restofworld.org/{yyyy}/{mm}/"],
+    "sitemapUrls": ["https://restofworld.org/sitemap.xml", "https://restofworld.org/post-sitemap.xml"]
+  },
+  {
+    "name": "International Energy Agency",
+    "category": "environmental",
+    "baseUrl": "https://www.iea.org",
+    "startUrls": ["https://www.iea.org", "https://www.iea.org/news", "https://www.iea.org/reports"],
+    "archiveUrlTemplates": [],
+    "sitemapUrls": ["https://www.iea.org/sitemap.xml"]
+  },
+  {
     "name": "Flipboard",
     "category": "general",
     "baseUrl": "https://flipboard.com",
