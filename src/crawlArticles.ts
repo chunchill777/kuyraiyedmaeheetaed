@@ -1,69 +1,71 @@
 import { PlaywrightCrawler } from "crawlee";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
-import crypto from "crypto";
+import type Database from "better-sqlite3";
+
 import {
-  openDb,
   ensureArticleTables,
+  findArticleIdByIdentity,
+  getArticleStats,
   getPendingUrls,
-  getPendingUrlsForDomains,
-  markUrlStatus,
   insertArticle,
-  getArticleStats
+  insertRejectedPage,
+  linkSourceJobUrlArticle,
+  markUrlStatus,
+  openDb
 } from "./db";
+import {
+  canonicalizeUrl,
+  hashNormalizedContent,
+  parseDeterministicDate,
+  validateArticleCandidate
+} from "./articleQuality";
+import { isLikelyListingPageUrl, isSameDomain } from "./discover";
+import {
+  isPrivateOrLocalHostname,
+  isResolvedPublicHttpUrl
+} from "./urlSafety";
+import { createEphemeralCrawlerConfiguration } from "./crawlerConfiguration";
 
-const CRAWL_LIMIT = Number(process.env.CRAWL_LIMIT || 100);
-const MAX_CONCURRENCY = Number(process.env.MAX_CONCURRENCY || 2);
-const TEST_SOURCE_NAME = process.env.TEST_SOURCE_NAME || "";
-const USE_PRIORITY_QUEUE = process.env.USE_PRIORITY_QUEUE !== "false";
+const DEFAULT_CRAWL_LIMIT = Number(
+  process.env.CRAWL_BATCH_SIZE || process.env.CRAWL_LIMIT || 100
+);
+const DEFAULT_MAX_CONCURRENCY = Number(process.env.MAX_CONCURRENCY || 2);
+const DEFAULT_DAYS_BACK = Number(process.env.DAYS_BACK || 365);
+const MIN_TEXT_LENGTH = Number(process.env.MIN_TEXT_LENGTH || 700);
+const MIN_WORD_COUNT = Number(process.env.MIN_WORD_COUNT || 100);
 
-const MIN_TEXT_LENGTH = Number(process.env.MIN_TEXT_LENGTH || 500);
-const PRIORITY_DOMAINS = [
-  "nextbigfuture.com",
-  "scitechdaily.com",
-  "venturebeat.com",
-  "quantumrun.com",
-  "futurity.org",
-  "pewresearch.org",
-  "trendwatching.com",
-  "ourworldindata.org",
-  "worldbank.org",
-  "brookings.edu",
-  "piie.com",
-  "project-syndicate.org",
-  "cepr.org",
-  "techcrunch.com",
-  "spectrum.ieee.org",
-  "restofworld.org",
-  "iea.org",
-  "resilience.org",
-  "wired.com"
-];
 const BLOCKED_RESOURCE_TYPES = new Set([
   "image",
   "media",
   "font",
   "stylesheet"
 ]);
-const ARTICLE_BLOCKED_PARTS = [
-  "/sponsor/",
-  "/sponsored/",
-  "/press-release/",
-  "/tag/",
-  "/category/",
-  "/author/",
-  "/about",
-  "/contact",
-  "/privacy",
-  "/terms",
-  "/login",
-  "/signup",
-  "/subscribe",
-  "/newsletter",
-  "/video",
-  "/podcast",
-  "?s="
-];
+
+const ARTICLE_BLOCKED_SEGMENTS = new Set([
+  "sponsor",
+  "sponsored",
+  "press-release",
+  "tag",
+  "tags",
+  "category",
+  "categories",
+  "author",
+  "authors",
+  "about",
+  "contact",
+  "privacy",
+  "terms",
+  "login",
+  "signin",
+  "signup",
+  "subscribe",
+  "newsletter",
+  "video",
+  "podcast",
+  "search"
+]);
+
 const ARTICLE_BLOCKED_EXTENSIONS = [
   ".jpg",
   ".jpeg",
@@ -76,336 +78,580 @@ const ARTICLE_BLOCKED_EXTENSIONS = [
   ".mp4",
   ".mp3",
   ".css",
-  ".js"
-];
-const ERROR_PAGE_TITLE_PARTS = [
-  "404",
-  "page not found",
-  "not found",
-  "access denied",
-  "forbidden",
-  "service unavailable",
-  "bad gateway"
-];
-const ERROR_PAGE_TEXT_PARTS = [
-  "404 - page not found",
-  "404 page not found",
-  "the page you requested could not be found",
-  "the page you are looking for could not be found",
-  "sorry, the page you are looking for does not exist",
-  "this page could not be found",
-  "access denied",
-  "403 forbidden",
-  "service unavailable",
-  "bad gateway"
+  ".js",
+  ".xml",
+  ".rss"
 ];
 
-function cleanText(text: string): string {
-  return text
+const CLUTTER_SELECTORS = [
+  "script",
+  "style",
+  "noscript",
+  "template",
+  "iframe",
+  "nav",
+  "aside",
+  "footer",
+  "form",
+  "[role='navigation']",
+  "[role='banner']",
+  "[role='contentinfo']",
+  "[aria-hidden='true']",
+  ".newsletter",
+  ".related-posts",
+  ".recommended",
+  ".social-share",
+  ".share-tools"
+].join(",");
+
+const ARTICLE_JSON_LD_TYPES = new Set([
+  "article",
+  "newsarticle",
+  "analysisnewsarticle",
+  "blogposting",
+  "report",
+  "scholarlyarticle",
+  "techarticle"
+]);
+
+type JsonLdArticle = {
+  headline: string | null;
+  datePublished: string | null;
+  matched: boolean;
+};
+
+export type PageData = {
+  title: string;
+  publishedDate: Date | null;
+  publishedDateSource: string | null;
+  text: string;
+  canonicalUrl: string | null;
+  finalUrl: string;
+  extractionMethod: "readability";
+  isArticleDocument: boolean;
+};
+
+export type CrawlArticlesOptions = {
+  db?: Database.Database;
+  limit?: number;
+  maxConcurrency?: number;
+  sourceName?: string;
+  sourceId?: number;
+  sourceJobId?: number;
+  daysBack?: number;
+};
+
+export type CrawlRunStats = {
+  selected: number;
+  crawled: number;
+  inserted: number;
+  duplicates: number;
+  rejected: number;
+  failed: number;
+  pendingAfter: number;
+};
+
+function cleanInlineText(text: string | null | undefined): string {
+  return (text || "")
     .replace(/\r/g, "")
     .replace(/\t/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ ]{2,}/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
 function parseDate(raw?: string | null): Date | null {
-  if (!raw) return null;
-
-  const date = new Date(raw);
-
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  return date;
+  return parseDeterministicDate(raw);
 }
 
-function hashText(text: string): string {
-  return crypto.createHash("sha256").update(text).digest("hex");
+function getMeta(document: Document, selector: string): string | null {
+  return document.querySelector(selector)?.getAttribute("content")?.trim() || null;
 }
 
-function extractArticleTextFromDocument(document: Document): string {
-  const reader = new Readability(document.cloneNode(true) as Document);
-  const article = reader.parse();
+function jsonLdNodes(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) return value.flatMap(jsonLdNodes);
+  if (!value || typeof value !== "object") return [];
 
-  return cleanText(article?.textContent || "");
+  const item = value as Record<string, unknown>;
+  const graph = Array.isArray(item["@graph"])
+    ? item["@graph"].flatMap(jsonLdNodes)
+    : [];
+  return [item, ...graph];
 }
 
-function extractJsonLdDate(jsonLdTexts: string[]): string | null {
-  for (const jsonText of jsonLdTexts) {
+function isArticleJsonLdNode(node: Record<string, unknown>): boolean {
+  const rawTypes = Array.isArray(node["@type"])
+    ? node["@type"]
+    : [node["@type"]];
+
+  return rawTypes.some(
+    (value) =>
+      typeof value === "string" && ARTICLE_JSON_LD_TYPES.has(value.toLowerCase())
+  );
+}
+
+function extractJsonLdArticle(document: Document): JsonLdArticle {
+  let headlineFallback: string | null = null;
+
+  for (const script of Array.from(
+    document.querySelectorAll('script[type="application/ld+json"]')
+  )) {
     try {
-      const parsed = JSON.parse(jsonText);
-      const items = Array.isArray(parsed) ? parsed : [parsed];
+      const parsed = JSON.parse(script.textContent || "");
 
-      for (const item of items) {
-        const graph = Array.isArray(item["@graph"]) ? item["@graph"] : [];
-        const candidates = [item, ...graph];
+      for (const node of jsonLdNodes(parsed)) {
+        if (!isArticleJsonLdNode(node)) continue;
 
-        for (const candidate of candidates) {
-          const date =
-            candidate.datePublished ||
-            candidate.dateCreated ||
-            candidate.dateModified;
+        const headline =
+          typeof node.headline === "string" ? cleanInlineText(node.headline) : null;
+        // dateModified is intentionally excluded: it cannot prove a page was
+        // published inside the requested backfill window.
+        const datePublished =
+          typeof node.datePublished === "string"
+            ? node.datePublished
+            : null;
 
-          if (date) {
-            return date;
-          }
+        if (headline && !headlineFallback) headlineFallback = headline;
+        if (datePublished) {
+          return {
+            headline: headline || headlineFallback,
+            datePublished,
+            matched: true
+          };
         }
       }
     } catch {
-      // ignore invalid JSON-LD
+      // Invalid JSON-LD is ignored; deterministic validation will quarantine a
+      // page that has no other trustworthy publication date.
     }
   }
 
-  return null;
+  return {
+    headline: headlineFallback,
+    datePublished: null,
+    matched: Boolean(headlineFallback)
+  };
 }
 
-async function extractPageData(page: any, url: string) {
-  const html = await page.content();
+function removeDocumentClutter(document: Document) {
+  for (const element of Array.from(document.querySelectorAll(CLUTTER_SELECTORS))) {
+    element.remove();
+  }
+}
 
-  const dom = new JSDOM(html, { url });
+export function extractArticleDataFromHtml(
+  html: string,
+  finalUrl: string,
+  requestedUrl = finalUrl
+): PageData {
+  const dom = new JSDOM(html, { url: finalUrl });
   const document = dom.window.document;
+  const jsonLd = extractJsonLdArticle(document);
 
-  const getMeta = (selector: string): string | null => {
-    return document.querySelector(selector)?.getAttribute("content") || null;
-  };
+  const publishedCandidates: Array<[string, string | null]> = [
+    ["meta:article:published_time", getMeta(document, 'meta[property="article:published_time"]')],
+    ["meta:datePublished", getMeta(document, 'meta[itemprop="datePublished"]')],
+    ["meta:pubdate", getMeta(document, 'meta[name="pubdate"]')],
+    ["meta:publish-date", getMeta(document, 'meta[name="publish-date"]')],
+    ["jsonld:datePublished", jsonLd.datePublished]
+  ];
 
-  const title = cleanText(
-    document.querySelector("h1")?.textContent?.trim() ||
-      document.title ||
-      ""
+  const published = publishedCandidates.find(([, raw]) => Boolean(parseDate(raw)));
+  removeDocumentClutter(document);
+
+  const reader = new Readability(document.cloneNode(true) as Document);
+  const readable = reader.parse();
+  const text = readable?.textContent?.trim() || "";
+  const title = cleanInlineText(
+    jsonLd.headline ||
+      getMeta(document, 'meta[property="og:title"]') ||
+      getMeta(document, 'meta[name="twitter:title"]') ||
+      readable?.title ||
+      document.querySelector("article h1, main h1, h1")?.textContent ||
+      document.title
   );
 
-  const timeDatetime =
-    document.querySelector("time")?.getAttribute("datetime") || null;
-
-  const jsonLdTexts = Array.from(
-    document.querySelectorAll('script[type="application/ld+json"]')
-  ).map((script) => script.textContent || "");
-
-  const jsonLdDate = extractJsonLdDate(jsonLdTexts);
-
-  const publishedRaw =
-    getMeta('meta[property="article:published_time"]') ||
-    getMeta('meta[name="date"]') ||
-    getMeta('meta[name="pubdate"]') ||
-    getMeta('meta[name="publish-date"]') ||
-    timeDatetime ||
-    jsonLdDate;
-
-  const articleText = extractArticleTextFromDocument(document);
-  const fallbackText = cleanText(document.body?.textContent || "");
-  const finalText = articleText.length > 300 ? articleText : fallbackText;
+  const canonicalRaw =
+    document.querySelector('link[rel="canonical"]')?.getAttribute("href") || finalUrl;
+  let canonicalUrl = canonicalizeUrl(new URL(canonicalRaw, finalUrl).toString());
+  if (canonicalUrl && !isSameDomain(canonicalUrl, requestedUrl)) canonicalUrl = null;
 
   return {
     title,
-    publishedDate: parseDate(publishedRaw),
-    text: finalText
+    publishedDate: parseDate(published?.[1]),
+    publishedDateSource: published?.[0] || null,
+    text,
+    canonicalUrl: canonicalUrl || canonicalizeUrl(finalUrl),
+    finalUrl,
+    extractionMethod: "readability",
+    isArticleDocument:
+      jsonLd.matched ||
+      /^(?:article|newsarticle|blogposting)$/i.test(
+        getMeta(document, 'meta[property="og:type"]') || ""
+      )
   };
 }
 
-function isObviousErrorPage(title: string, text: string): boolean {
-  const normalizedTitle = cleanText(title).toLowerCase();
-  const normalizedTextStart = cleanText(text).toLowerCase().slice(0, 1000);
-
-  if (
-    ERROR_PAGE_TITLE_PARTS.some((part) => normalizedTitle.includes(part)) &&
-    normalizedTitle.length <= 80
-  ) {
-    return true;
-  }
-
-  return ERROR_PAGE_TEXT_PARTS.some((part) =>
-    normalizedTextStart.includes(part)
-  );
+async function extractPageData(page: any, requestedUrl: string): Promise<PageData> {
+  const html = await page.content();
+  const finalUrl = page.url() || requestedUrl;
+  return extractArticleDataFromHtml(html, finalUrl, requestedUrl);
 }
 
-async function main() {
-  const db = openDb();
-  ensureArticleTables(db);
-
-  const pendingUrls = USE_PRIORITY_QUEUE
-    ? getPendingUrlsForDomains(
-        db,
-        CRAWL_LIMIT,
-        PRIORITY_DOMAINS,
-        TEST_SOURCE_NAME || undefined
-      )
-    : getPendingUrls(db, CRAWL_LIMIT, TEST_SOURCE_NAME || undefined);
-
-  console.log("Starting Phase 2: Crawl Articles");
-  console.log(`Pending selected: ${pendingUrls.length}`);
-  console.log(`Crawl limit: ${CRAWL_LIMIT}`);
-  console.log(`Max concurrency: ${MAX_CONCURRENCY}`);
-  console.log(`Source filter: ${TEST_SOURCE_NAME || "all"}`);
-  console.log(`Priority queue only: ${USE_PRIORITY_QUEUE}`);
-
-  if (pendingUrls.length === 0) {
-    console.log("No pending URLs to crawl.");
-    return;
-  }
-
-  const requests = pendingUrls.map((item) => ({
-    url: item.url,
-    uniqueKey: `article|${item.id}|${item.url}`,
-    userData: {
-      id: item.id,
-      sourceName: item.source_name,
-      sourceCategory: item.source_category
-    }
-  }));
-
-  let crawled = 0;
-  let skipped = 0;
-  let failed = 0;
-  let inserted = 0;
-
-  const crawler = new PlaywrightCrawler({
-    maxConcurrency: MAX_CONCURRENCY,
-    maxRequestsPerCrawl: CRAWL_LIMIT,
-
-    launchContext: {
-      launchOptions: {
-        headless: true
-      }
-    },
-
-    preNavigationHooks: [
-      async ({ page }) => {
-        await page.route("**/*", (route) => {
-          const resourceType = route.request().resourceType();
-
-          if (BLOCKED_RESOURCE_TYPES.has(resourceType)) {
-            return route.abort();
-          }
-
-          return route.continue();
-        });
-      }
-    ],
-
-    async requestHandler({ page, request, log }) {
-      const id = request.userData.id as number;
-      const sourceName = request.userData.sourceName as string;
-      const sourceCategory = request.userData.sourceCategory as string | null;
-
-      if (shouldSkipArticleUrl(request.url)) {
-        skipped++;
-        markUrlStatus(db, id, "skipped", "Skipped non-article URL");
-        return;
-      }
-
-      log.info(`[ARTICLE] ${request.url}`);
-
-      try {
-        const pageData = await extractPageData(page, request.url);
-
-        if (isObviousErrorPage(pageData.title, pageData.text)) {
-          skipped++;
-          markUrlStatus(
-            db,
-            id,
-            "skipped",
-            `Skipped obvious error page: ${pageData.title || "Untitled"}`
-          );
-          return;
-        }
-
-        if (!pageData.title || pageData.text.length < MIN_TEXT_LENGTH) {
-          skipped++;
-          markUrlStatus(
-            db,
-            id,
-            "skipped",
-            `Text too short or missing title. Text length: ${pageData.text.length}`
-          );
-          return;
-        }
-
-        const contentHash = hashText(pageData.text);
-
-        const ok = insertArticle(db, {
-          url: request.url,
-          sourceName,
-          sourceCategory,
-          title: pageData.title,
-          publishedDate: pageData.publishedDate
-            ? pageData.publishedDate.toISOString()
-            : null,
-          text: pageData.text,
-          contentHash
-        });
-
-        if (ok) inserted++;
-
-        crawled++;
-        markUrlStatus(db, id, "crawled");
-
-        log.info(`[SAVED] ${pageData.title}`);
-      } catch (err: any) {
-        const message = err?.stack || err?.message || String(err);
-
-        failed++;
-        markUrlStatus(db, id, "failed", message);
-        log.warning(`[FAILED ARTICLE] ${request.url}`);
-        log.warning(message);
-      }
-    },
-
-    failedRequestHandler({ request, log }) {
-      const id = request.userData.id as number;
-      failed++;
-      markUrlStatus(db, id, "failed", "Crawlee failed request");
-      log.warning(`[FAILED REQUEST] ${request.url}`);
-    }
-  });
-
-  await crawler.run(requests);
-
-  const stats = getArticleStats(db);
-
-  console.log("\nDone Phase 2.");
-  console.log(`Crawled: ${crawled}`);
-  console.log(`Skipped: ${skipped}`);
-  console.log(`Failed: ${failed}`);
-  console.log(`Inserted articles: ${inserted}`);
-  console.log(`Total articles in DB: ${stats.total}`);
-
-  console.log("Articles by source:");
-  for (const row of stats.bySource) {
-    console.log(`- ${row.source_name}: ${row.count}`);
-  }
-
-  console.log("\nSaved DB: ./data/crawler.db");
-}
-
-function shouldSkipArticleUrl(url: string): boolean {
-  const u = url.toLowerCase();
+export function shouldSkipArticleUrl(url: string): boolean {
+  let parsed: URL;
 
   try {
-    const path = new URL(url).pathname.replace(/\/+$/, "");
-    const parts = path.split("/").filter(Boolean);
-    const lastThree = parts.slice(-3).join("/");
-
-    if (/^20\d{2}\/\d{2}\/\d{2}$/.test(lastThree)) {
-      return true;
-    }
+    parsed = new URL(url);
   } catch {
     return true;
   }
 
-  if (ARTICLE_BLOCKED_PARTS.some((part) => u.includes(part))) {
-    return true;
-  }
+  const path = parsed.pathname.replace(/\/+$/, "");
+  const segments = path.toLowerCase().split("/").filter(Boolean);
+  const suffix = path.split("/").filter(Boolean).slice(-3).join("/");
 
-  if (ARTICLE_BLOCKED_EXTENSIONS.some((ext) => u.endsWith(ext))) {
+  if (/^20\d{2}\/\d{1,2}\/\d{1,2}$/.test(suffix)) return true;
+  if (isLikelyListingPageUrl(url)) return true;
+  if (segments.some((segment) => ARTICLE_BLOCKED_SEGMENTS.has(segment))) return true;
+  if (parsed.searchParams.has("s")) return true;
+  if (ARTICLE_BLOCKED_EXTENSIONS.some((ext) => path.toLowerCase().endsWith(ext))) {
     return true;
   }
 
   return false;
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err);
-});
+function pendingCount(
+  db: Database.Database,
+  options: Pick<CrawlArticlesOptions, "sourceName" | "sourceId" | "sourceJobId">
+): number {
+  if (options.sourceJobId !== undefined) {
+    const row = db
+      .prepare(`
+        SELECT COUNT(*) AS count
+        FROM source_job_urls
+        WHERE source_job_id = ? AND status = 'pending'
+      `)
+      .get(options.sourceJobId) as { count: number };
+    return row.count;
+  }
+
+  const where = ["status = 'pending'"];
+  const params: Array<string | number> = [];
+
+  if (options.sourceName) {
+    where.push("source_name LIKE ?");
+    params.push(`%${options.sourceName}%`);
+  }
+  if (options.sourceId !== undefined) {
+    where.push("source_id = ?");
+    params.push(options.sourceId);
+  }
+  const row = db
+    .prepare(`SELECT COUNT(*) AS count FROM urls WHERE ${where.join(" AND ")}`)
+    .get(...params) as { count: number };
+  return row.count;
+}
+
+export async function crawlArticles(
+  options: CrawlArticlesOptions = {}
+): Promise<CrawlRunStats> {
+  const ownsDb = !options.db;
+  const db = options.db || openDb();
+  const limit = options.limit ?? DEFAULT_CRAWL_LIMIT;
+  const maxConcurrency = options.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY;
+  const daysBack = options.daysBack ?? DEFAULT_DAYS_BACK;
+
+  for (const [name, value] of [
+    ["crawl limit", limit],
+    ["max concurrency", maxConcurrency],
+    ["days back", daysBack]
+  ] as const) {
+    if (!Number.isInteger(value) || value < 1) {
+      throw new Error(`${name} must be a positive integer`);
+    }
+  }
+  if (!Number.isInteger(MIN_TEXT_LENGTH) || MIN_TEXT_LENGTH < 500) {
+    throw new Error("MIN_TEXT_LENGTH must be an integer of at least 500");
+  }
+  if (!Number.isInteger(MIN_WORD_COUNT) || MIN_WORD_COUNT < 50) {
+    throw new Error("MIN_WORD_COUNT must be an integer of at least 50");
+  }
+
+  ensureArticleTables(db);
+
+  try {
+    const pendingUrls = getPendingUrls(db, limit, options.sourceName, {
+      sourceId: options.sourceId,
+      sourceJobId: options.sourceJobId
+    });
+
+    const stats: CrawlRunStats = {
+      selected: pendingUrls.length,
+      crawled: 0,
+      inserted: 0,
+      duplicates: 0,
+      rejected: 0,
+      failed: 0,
+      pendingAfter: 0
+    };
+
+    console.log("Starting Phase 2: Crawl + deterministic quality gate");
+    console.log(`Pending selected: ${pendingUrls.length}`);
+    console.log(`Source: ${options.sourceName || "all"}`);
+    console.log(`Source job: ${options.sourceJobId ?? "none"}`);
+    console.log(`Days back: ${daysBack}`);
+
+    if (pendingUrls.length === 0) {
+      stats.pendingAfter = pendingCount(db, options);
+      return stats;
+    }
+
+    const requests = pendingUrls.map((item) => ({
+      url: item.url,
+      uniqueKey: `article|${item.id}|${item.url}`,
+      userData: {
+        id: item.id,
+        sourceName: item.source_name,
+        sourceCategory: item.source_category,
+        sourceId: item.source_id ?? options.sourceId ?? null,
+        sourceJobId: item.source_job_id ?? options.sourceJobId ?? null
+      }
+    }));
+
+    const crawler = new PlaywrightCrawler({
+      maxConcurrency,
+      maxRequestsPerCrawl: limit,
+      maxRequestRetries: 2,
+      launchContext: { launchOptions: { headless: true } },
+      preNavigationHooks: [
+        async ({ page }) => {
+          await page.route("**/*", async (route) => {
+            if (BLOCKED_RESOURCE_TYPES.has(route.request().resourceType())) {
+              return route.abort();
+            }
+            if (!(await isResolvedPublicHttpUrl(route.request().url()))) {
+              return route.abort();
+            }
+            return route.continue();
+          });
+        }
+      ],
+
+      async requestHandler(context) {
+        const { page, request, log } = context;
+        const id = request.userData.id as number;
+        const sourceName = request.userData.sourceName as string;
+        const sourceCategory = request.userData.sourceCategory as string | null;
+        const sourceId = request.userData.sourceId as number | null;
+        const sourceJobId = request.userData.sourceJobId as number | null;
+
+        const reject = (
+          reasonCode: string,
+          details: unknown,
+          pageData?: Partial<PageData>
+        ) => {
+          stats.rejected++;
+          insertRejectedPage(db, {
+            urlId: id,
+            sourceId,
+            sourceJobId,
+            url: pageData?.finalUrl || request.url,
+            stage: "article_quality",
+            reasonCode,
+            reasonDetails:
+              typeof details === "string" ? details : JSON.stringify(details),
+            title: pageData?.title || null,
+            publishedDate: pageData?.publishedDate?.toISOString() || null,
+            textLength: pageData?.text?.length || 0,
+            contentHash: pageData?.text
+              ? hashNormalizedContent(pageData.text)
+              : null
+          });
+          markUrlStatus(
+            db,
+            id,
+            "skipped",
+            `${reasonCode}: ${JSON.stringify(details)}`,
+            sourceJobId ?? undefined
+          );
+        };
+
+        if (shouldSkipArticleUrl(request.url)) {
+          reject("NON_ARTICLE_URL", { url: request.url });
+          return;
+        }
+
+        log.info(`[ARTICLE] ${request.url}`);
+
+        try {
+          const response = (context as any).response;
+          if (!response) {
+            reject("MISSING_HTTP_RESPONSE", { url: request.url });
+            return;
+          }
+          const status = response.status();
+          const headers = await response.headers();
+          const contentType = String(headers["content-type"] || "").toLowerCase();
+          const serverAddress = await response.serverAddr();
+
+          if (status < 200 || status >= 400) {
+            reject("HTTP_STATUS", { status });
+            return;
+          }
+          if (!contentType || !/(?:text\/html|application\/xhtml\+xml)/.test(contentType)) {
+            reject("NON_HTML_RESPONSE", { contentType: contentType || "missing" });
+            return;
+          }
+          if (
+            !serverAddress ||
+            isPrivateOrLocalHostname(serverAddress.ipAddress)
+          ) {
+            reject("NON_PUBLIC_RESPONSE_ADDRESS", {
+              address: serverAddress?.ipAddress || "missing"
+            });
+            return;
+          }
+
+          const pageData = await extractPageData(page, request.url);
+          if (!isSameDomain(pageData.finalUrl, request.url)) {
+            reject(
+              "CROSS_DOMAIN_REDIRECT",
+              { requestedUrl: request.url, finalUrl: pageData.finalUrl },
+              pageData
+            );
+            return;
+          }
+          if (shouldSkipArticleUrl(pageData.finalUrl)) {
+            reject("NON_ARTICLE_FINAL_URL", { finalUrl: pageData.finalUrl }, pageData);
+            return;
+          }
+          if (!pageData.isArticleDocument) {
+            reject(
+              "MISSING_ARTICLE_DOCUMENT_SIGNAL",
+              { required: "Article JSON-LD or og:type=article" },
+              pageData
+            );
+            return;
+          }
+          const quality = validateArticleCandidate(
+            {
+              url: pageData.canonicalUrl || pageData.finalUrl,
+              title: pageData.title,
+              publishedDate: pageData.publishedDate,
+              text: pageData.text
+            },
+            {
+              daysBack,
+              minTextLength: MIN_TEXT_LENGTH,
+              minWordCount: MIN_WORD_COUNT
+            }
+          );
+
+          if (!quality.accepted) {
+            reject(
+              quality.rejectionCodes[0] || "QUALITY_REJECTED",
+              {
+                allCodes: quality.rejectionCodes,
+                qualityScore: quality.qualityScore,
+                metrics: quality.metrics,
+                publishedDateSource: pageData.publishedDateSource,
+                extractionMethod: pageData.extractionMethod
+              },
+              pageData
+            );
+            return;
+          }
+
+          const inserted = insertArticle(db, {
+            url: pageData.finalUrl,
+            canonicalUrl: quality.canonicalUrl,
+            sourceName,
+            sourceCategory,
+            sourceId,
+            sourceJobId,
+            title: pageData.title,
+            publishedDate: quality.publishedDate,
+            text: quality.cleanedText,
+            contentHash: quality.contentHash,
+            qualityScore: quality.qualityScore
+          });
+
+          if (inserted) stats.inserted++;
+          else stats.duplicates++;
+
+          if (sourceJobId !== null) {
+            const articleId = findArticleIdByIdentity(db, {
+              url: pageData.finalUrl,
+              canonicalUrl: quality.canonicalUrl,
+              contentHash: quality.contentHash
+            });
+            if (!articleId || !linkSourceJobUrlArticle(db, sourceJobId, id, articleId)) {
+              throw new Error("Accepted article could not be linked to its source job URL");
+            }
+          }
+
+          stats.crawled++;
+          markUrlStatus(
+            db,
+            id,
+            "crawled",
+            inserted ? undefined : "Duplicate canonical URL or content hash",
+            sourceJobId ?? undefined
+          );
+          log.info(`[ACCEPTED] ${pageData.title}`);
+        } catch (error: any) {
+          const message = error?.stack || error?.message || String(error);
+          stats.failed++;
+          markUrlStatus(db, id, "failed", message, sourceJobId ?? undefined);
+          log.warning(`[FAILED ARTICLE] ${request.url}: ${message}`);
+        }
+      },
+
+      failedRequestHandler({ request, log }) {
+        const id = request.userData.id as number;
+        const sourceJobId = request.userData.sourceJobId as number | null;
+        stats.failed++;
+        markUrlStatus(
+          db,
+          id,
+          "failed",
+          "Crawlee failed after retries",
+          sourceJobId ?? undefined
+        );
+        log.warning(`[FAILED REQUEST] ${request.url}`);
+      }
+    }, createEphemeralCrawlerConfiguration());
+
+    await crawler.run(requests);
+    stats.pendingAfter = pendingCount(db, options);
+
+    const articleStats = getArticleStats(db);
+    console.log("\nDone Phase 2.");
+    console.log(JSON.stringify(stats, null, 2));
+    console.log(`Total accepted articles: ${articleStats.total}`);
+    return stats;
+  } finally {
+    if (ownsDb) db.close();
+  }
+}
+
+export async function main() {
+  await crawlArticles({
+    limit: DEFAULT_CRAWL_LIMIT,
+    maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+    sourceName: process.env.TEST_SOURCE_NAME || undefined,
+    sourceId: process.env.SOURCE_ID ? Number(process.env.SOURCE_ID) : undefined,
+    sourceJobId: process.env.SOURCE_JOB_ID
+      ? Number(process.env.SOURCE_JOB_ID)
+      : undefined,
+    daysBack: DEFAULT_DAYS_BACK
+  });
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error("Fatal error:", error);
+    process.exitCode = 1;
+  });
+}

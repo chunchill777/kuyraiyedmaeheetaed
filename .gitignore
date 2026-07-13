@@ -1,6 +1,7 @@
 node_modules/
 .env
 .env.*
+!.env.example
 *.log
 
 # Runtime crawler output and local databases
@@ -10,3 +11,7 @@ knowledge/
 
 # macOS
 .DS_Store
+
+# Build and test output
+dist/
+coverage/

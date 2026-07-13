@@ -29,42 +29,20 @@ const OUTPUT_DIR = "./knowledge";
 const OUTPUT_TEXT_PATH = `${OUTPUT_DIR}/results.txt`;
 
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "qwen3:8b";
-const OLLAMA_URL = "http://localhost:11434/api/generate";
+const OLLAMA_URL =
+  process.env.OLLAMA_URL || "http://localhost:11434/api/generate";
 const CLASSIFIER_VERSION = "kb-v2";
 const CLASSIFIER_MODEL = `${OLLAMA_MODEL}:${CLASSIFIER_VERSION}`;
 
 const TEST_SOURCE_NAME = process.env.TEST_SOURCE_NAME || "";
 const CLASSIFY_LIMIT = Number(process.env.CLASSIFY_LIMIT || 50);
-const DAYS_BACK = Number(process.env.DAYS_BACK || 180);
+const DAYS_BACK = Number(process.env.DAYS_BACK || 365);
 
-const ALLOW_UNKNOWN_DATE = process.env.ALLOW_UNKNOWN_DATE !== "false";
+const ALLOW_UNKNOWN_DATE = process.env.ALLOW_UNKNOWN_DATE === "true";
 const USE_DATE_FILTER = process.env.USE_DATE_FILTER !== "false";
 const USE_KEYWORD_PREFILTER = process.env.USE_KEYWORD_PREFILTER === "true";
-const USE_PRIORITY_SOURCES = process.env.USE_PRIORITY_SOURCES !== "false";
 const USE_SOURCE_CATEGORY_SCOPE =
   process.env.USE_SOURCE_CATEGORY_SCOPE === "true";
-
-const PRIORITY_DOMAINS = [
-  "nextbigfuture.com",
-  "scitechdaily.com",
-  "venturebeat.com",
-  "quantumrun.com",
-  "futurity.org",
-  "pewresearch.org",
-  "trendwatching.com",
-  "ourworldindata.org",
-  "worldbank.org",
-  "brookings.edu",
-  "piie.com",
-  "project-syndicate.org",
-  "cepr.org",
-  "techcrunch.com",
-  "spectrum.ieee.org",
-  "restofworld.org",
-  "iea.org",
-  "resilience.org",
-  "wired.com"
-];
 const ERROR_PAGE_TITLE_PARTS = [
   "404",
   "page not found",
@@ -239,7 +217,8 @@ function isDateAccepted(publishedDate: string | null, fromDate: Date): boolean {
 
   if (!date) return ALLOW_UNKNOWN_DATE;
 
-  return date >= fromDate;
+  const futureTolerance = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  return date >= fromDate && date <= futureTolerance;
 }
 
 function normalizeText(text: string): string {
@@ -277,7 +256,7 @@ function getKeywordTokens(
   scopes: { category: SteepCategory; keywords: string[] }[]
 ): string[] {
   if (scopes.length === 1) {
-    return KEYWORD_TOKENS_BY_CATEGORY[scopes[0].category];
+    return KEYWORD_TOKENS_BY_CATEGORY[scopes[0]!.category];
   }
 
   if (scopes.length === STEEP_CATEGORIES.length) {
@@ -344,10 +323,13 @@ function safeJsonParse(text: string): LlmResult {
 }
 
 function normalizeLlmResult(value: any): LlmResult {
+  const isNewsArticle = value?.isNewsArticle === true;
+  const isRelevant = isNewsArticle && value?.isRelevant === true;
+
   return {
-    isNewsArticle: Boolean(value?.isNewsArticle),
-    isRelevant: Boolean(value?.isRelevant),
-    matchedKeywords: Array.isArray(value?.matchedKeywords)
+    isNewsArticle,
+    isRelevant,
+    matchedKeywords: isRelevant && Array.isArray(value?.matchedKeywords)
       ? value.matchedKeywords.filter((x: any) => typeof x === "string")
       : [],
     reason: typeof value?.reason === "string" ? value.reason : ""
@@ -381,7 +363,7 @@ Task:
 Rules:
 - isNewsArticle should be true only for actual news articles, reports, blog articles, research/news posts, or analysis articles.
 - isNewsArticle should be false for homepages, category pages, tag pages, search pages, author pages, login pages, newsletters, ads, privacy pages, and event listing pages.
-- Prefer recall over precision. This output feeds an AI-agent knowledge base.
+- Prefer precision over recall. Reject navigation, consent, paywall, error, and listing pages.
 - isRelevant should be true if the article gives useful strategic context, evidence, signals, forecasts, policy/economic/social/technology/environment information, or analysis related to any STEEP dimension.
 - Do not require the exact keyword phrase to appear in the text.
 - If an article is relevant, choose the closest matching keywords from the provided keyword list.
@@ -507,37 +489,7 @@ function prepareClassificationStatements(db: any): ClassificationStatements {
   };
 }
 
-function getPrioritySqlParts() {
-  const domainWhere = PRIORITY_DOMAINS.map(() => "lower(a.url) LIKE ?").join(
-    " OR "
-  );
-  const domainOrder = PRIORITY_DOMAINS.map(
-    (_, index) => `WHEN lower(a.url) LIKE ? THEN ${index}`
-  ).join("\n");
-  const whereParams = PRIORITY_DOMAINS.map((domain) => `%${domain}%`);
-  const orderParams = PRIORITY_DOMAINS.map((domain) => `%${domain}%`);
-
-  return {
-    domainWhere,
-    domainOrder,
-    whereParams,
-    orderParams
-  };
-}
-
 function getArticlesToClassify(db: any): ArticleRow[] {
-  const priority = USE_PRIORITY_SOURCES ? getPrioritySqlParts() : null;
-  const priorityWhere = priority ? `AND (${priority.domainWhere})` : "";
-  const priorityOrder = priority
-    ? `
-        CASE
-          ${priority.domainOrder}
-          ELSE ${PRIORITY_DOMAINS.length}
-        END,`
-    : "";
-  const baseParams = priority ? priority.whereParams : [];
-  const orderParams = priority ? priority.orderParams : [];
-
   if (TEST_SOURCE_NAME) {
     return db
       .prepare(`
@@ -551,7 +503,6 @@ function getArticlesToClassify(db: any): ArticleRow[] {
           a.text
         FROM articles a
         WHERE a.source_name LIKE ?
-          ${priorityWhere}
           AND NOT EXISTS (
             SELECT 1
             FROM article_classifications c
@@ -559,7 +510,6 @@ function getArticlesToClassify(db: any): ArticleRow[] {
               AND c.model = ?
           )
         ORDER BY
-          ${priorityOrder}
           CASE WHEN a.published_date IS NULL THEN 1 ELSE 0 END,
           a.published_date DESC,
           a.id ASC
@@ -567,9 +517,7 @@ function getArticlesToClassify(db: any): ArticleRow[] {
       `)
       .all(
         `%${TEST_SOURCE_NAME}%`,
-        ...baseParams,
         CLASSIFIER_MODEL,
-        ...orderParams,
         CLASSIFY_LIMIT
       ) as ArticleRow[];
   }
@@ -591,9 +539,7 @@ function getArticlesToClassify(db: any): ArticleRow[] {
         WHERE c.article_id = a.id
           AND c.model = ?
       )
-        ${priorityWhere}
       ORDER BY
-        ${priorityOrder}
         CASE WHEN a.published_date IS NULL THEN 1 ELSE 0 END,
         a.published_date DESC,
         a.id ASC
@@ -601,8 +547,6 @@ function getArticlesToClassify(db: any): ArticleRow[] {
     `)
     .all(
       CLASSIFIER_MODEL,
-      ...baseParams,
-      ...orderParams,
       CLASSIFY_LIMIT
     ) as ArticleRow[];
 }
@@ -727,10 +671,14 @@ async function exportKnowledgeText(db: any) {
       LEFT JOIN matches m ON m.article_id = a.id
       WHERE c.is_news_article = 1
         AND c.is_relevant = 1
+        AND c.model = ?
+        AND a.published_date IS NOT NULL
+        AND datetime(a.published_date) >= datetime('now', ?)
+        AND datetime(a.published_date) <= datetime('now', '+1 day')
       GROUP BY a.id, COALESCE(m.category, a.source_category, 'general')
       ORDER BY a.published_date DESC
     `)
-    .all() as ExportRow[];
+    .all(CLASSIFIER_MODEL, `-${DAYS_BACK} days`) as ExportRow[];
 
   await fs.mkdir(OUTPUT_DIR, { recursive: true });
 
@@ -766,7 +714,7 @@ async function exportKnowledgeText(db: any) {
   await fs.writeFile(OUTPUT_TEXT_PATH, blocks.join("\n"), "utf-8");
 }
 
-async function main() {
+export async function main() {
   const db = openDb();
   ensurePhase3Tables(db);
   const statements = prepareClassificationStatements(db);
@@ -778,7 +726,6 @@ async function main() {
   console.log(`Model: ${OLLAMA_MODEL}`);
   console.log(`Classifier version: ${CLASSIFIER_VERSION}`);
   console.log(`Source filter: ${TEST_SOURCE_NAME || "all"}`);
-  console.log(`Priority sources only: ${USE_PRIORITY_SOURCES}`);
   console.log(`Classify limit: ${CLASSIFY_LIMIT}`);
   console.log(`Days back: ${DAYS_BACK}`);
   console.log(`From date: ${fromDate.toISOString()}`);
@@ -794,6 +741,7 @@ async function main() {
   let skippedByErrorPage = 0;
   let relevantThisRun = 0;
   let llmCalls = 0;
+  let llmFailures = 0;
 
   for (const article of articles) {
     console.log(`\n[ARTICLE] ${article.title}`);
@@ -851,12 +799,9 @@ async function main() {
       llmCalls++;
       result = await classifyWithLocalLlm(article);
     } catch (err: any) {
-      result = {
-        isNewsArticle: false,
-        isRelevant: false,
-        matchedKeywords: [],
-        reason: err?.message || "LLM call failed."
-      };
+      llmFailures++;
+      console.log(`[RETRY LATER] ${err?.message || "LLM call failed."}`);
+      continue;
     }
 
     markClassification(statements, article.id, result);
@@ -882,6 +827,7 @@ async function main() {
   console.log(`Skipped by date: ${skippedByDate}`);
   console.log(`Skipped by prefilter: ${skippedByPrefilter}`);
   console.log(`LLM calls: ${llmCalls}`);
+  console.log(`LLM failures left retryable: ${llmFailures}`);
   console.log(`Relevant this run: ${relevantThisRun}`);
   console.log(`Total classified in DB: ${stats.classified}`);
   console.log(`Total relevant KB articles: ${stats.relevant}`);
@@ -890,6 +836,9 @@ async function main() {
   console.log(`Saved: ${OUTPUT_TEXT_PATH}`);
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error("Fatal error:", err);
+    process.exitCode = 1;
+  });
+}

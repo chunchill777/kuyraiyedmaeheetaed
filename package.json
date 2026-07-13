@@ -1,0 +1,37 @@
+{
+  "name": "scrapeai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FIFO source scraping pipeline with deterministic article quality gates",
+  "scripts": {
+    "start": "tsx src/processSourceQueue.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "test": "tsx --test tests/**/*.test.ts",
+    "discover": "tsx src/main.ts",
+    "filter": "tsx src/filterUrls.ts",
+    "crawl": "tsx src/crawlArticles.ts",
+    "classify": "tsx src/classifyArticles.ts",
+    "source:add": "tsx src/addSource.ts",
+    "source:work": "tsx src/processSourceQueue.ts",
+    "source:status": "tsx src/sourceQueueStatus.ts",
+    "queue:clear-legacy": "tsx src/clearLegacyQueue.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "better-sqlite3": "^12.0.0",
+    "crawlee": "^3.15.0",
+    "jsdom": "^26.0.0",
+    "playwright": "^1.55.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/jsdom": "^21.1.7",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0"
+  }
+}

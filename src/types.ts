@@ -17,6 +17,8 @@ export type Source = {
   searchUrlTemplates?: string[];
   archiveUrlTemplates?: string[];
   sitemapUrls?: string[];
+  /** Minimum distinct publication months required before a 365-day job completes. */
+  minCoverageMonths?: number;
 };
 
 export type DiscoveredUrl = {

@@ -4,16 +4,19 @@ import { openDb, insertUrls, getUrlStats } from "./db";
 import {
   discoverFromSitemaps,
   buildArchiveUrls,
+  buildSearchListingUrls,
   discoverFromListingPages,
   getBaseUrl,
   getFromDate
 } from "./discover";
+import type Database from "better-sqlite3";
+import { canonicalizeUrl } from "./articleQuality";
 
 const STORAGE_PATH = "./src/storage.json";
 
 const TEST_SOURCE_NAME = process.env.TEST_SOURCE_NAME || "";
 const TEST_SOURCE_INDEX = Number(process.env.TEST_SOURCE_INDEX || 0);
-const DAYS_BACK = Number(process.env.DAYS_BACK || 180);
+const DAYS_BACK = Number(process.env.DAYS_BACK || 365);
 
 function selectSource(sources: Source[]): Source {
   if (TEST_SOURCE_NAME) {
@@ -37,79 +40,102 @@ function selectSource(sources: Source[]): Source {
   return source;
 }
 
-async function main() {
-  const rawSources = await fs.readFile(STORAGE_PATH, "utf-8");
-  const sources: Source[] = JSON.parse(rawSources);
-
-  const source = selectSource(sources);
+export async function discoverSource(
+  source: Source,
+  options: {
+    daysBack?: number;
+    db?: Database.Database;
+    sourceId?: number;
+    sourceJobId?: number;
+  } = {}
+) {
+  const daysBack = options.daysBack ?? DAYS_BACK;
+  const ownsDb = !options.db;
+  const db = options.db || openDb();
   const baseUrl = getBaseUrl(source);
-  const fromDate = getFromDate(DAYS_BACK);
-
-  const db = openDb();
+  const fromDate = getFromDate(daysBack);
 
   console.log("Starting Phase 1: URL Discovery");
   console.log(`Source: ${source.name}`);
   console.log(`Category: ${source.category || "unknown"}`);
   console.log(`Base URL: ${baseUrl}`);
-  console.log(`Days Back: ${DAYS_BACK}`);
+  console.log(`Days Back: ${daysBack}`);
   console.log(`From Date: ${fromDate.toISOString()}`);
 
   let inserted = 0;
   let duplicated = 0;
 
   const saveDiscoveredUrls = (items: DiscoveredUrl[]) => {
-    const result = insertUrls(db, items);
+    const result = insertUrls(
+      db,
+      items.map((item) => ({
+        ...item,
+        sourceId: options.sourceId,
+        sourceJobId: options.sourceJobId,
+        canonicalUrl: canonicalizeUrl(item.url)
+      }))
+    );
     inserted += result.inserted;
     duplicated += result.duplicated;
   };
 
-  // 1. Sitemap discovery
-  console.log("\n[1/3] Discovering from sitemaps...");
-  const sitemapUrls = await discoverFromSitemaps(source);
-  console.log(`Sitemap URLs discovered: ${sitemapUrls.length}`);
+  try {
+    console.log("\n[1/3] Discovering from sitemaps...");
+    const sitemapUrls = await discoverFromSitemaps(source, daysBack);
+    console.log(`Sitemap URLs discovered: ${sitemapUrls.length}`);
+    saveDiscoveredUrls(sitemapUrls);
 
-  saveDiscoveredUrls(sitemapUrls);
+    console.log("\n[2/3] Building monthly archive URLs...");
+    const archiveListingUrls = buildArchiveUrls(source, daysBack);
+    const searchListingUrls = buildSearchListingUrls(source, daysBack);
+    console.log(`Archive listing URLs generated: ${archiveListingUrls.length}`);
+    console.log(`Search listing URLs generated: ${searchListingUrls.length}`);
 
-  // 2. Monthly archive URLs
-  console.log("\n[2/3] Building monthly archive URLs...");
-  const archiveListingUrls = buildArchiveUrls(source, DAYS_BACK);
-  console.log(`Archive listing URLs generated: ${archiveListingUrls.length}`);
+    // Archive URLs are discovery inputs, never article candidates themselves.
+    console.log("\n[3/3] Discovering links from startUrls/archive pages...");
+    const configuredStartUrls = source.startUrls?.length
+      ? source.startUrls
+      : [source.homepageUrl || source.baseUrl || source.feedUrl].filter(
+          (value): value is string => Boolean(value)
+        );
+    const listingUrls = [
+      ...configuredStartUrls,
+      ...archiveListingUrls.map((x) => x.url),
+      ...searchListingUrls
+    ];
 
-  saveDiscoveredUrls(archiveListingUrls);
+    const listingDiscovered = await discoverFromListingPages({
+      source,
+      listingUrls
+    });
 
-  // 3. Discover article links from startUrls + archive listing pages
-  console.log("\n[3/3] Discovering links from startUrls/archive pages...");
+    console.log(`Listing page links discovered: ${listingDiscovered.length}`);
+    saveDiscoveredUrls(listingDiscovered);
 
-  const listingUrls = [
-    ...(source.startUrls || []),
-    ...archiveListingUrls.map((x) => x.url)
-  ];
+    const stats = getUrlStats(db);
+    console.log("\nDone Phase 1.");
+    console.log(`Inserted URLs: ${inserted}`);
+    console.log(`Duplicate URLs skipped: ${duplicated}`);
+    console.log(`Total URLs in DB: ${stats.total}`);
+    console.log(`Pending URLs: ${stats.pending}`);
 
-  const listingDiscovered: DiscoveredUrl[] = await discoverFromListingPages({
-    source,
-    listingUrls
-  });
-
-  console.log(`Listing page links discovered: ${listingDiscovered.length}`);
-
-  saveDiscoveredUrls(listingDiscovered);
-
-  const stats = getUrlStats(db);
-
-  console.log("\nDone Phase 1.");
-  console.log(`Inserted URLs: ${inserted}`);
-  console.log(`Duplicate URLs skipped: ${duplicated}`);
-  console.log(`Total URLs in DB: ${stats.total}`);
-  console.log(`Pending URLs: ${stats.pending}`);
-  console.log("By method:");
-
-  for (const row of stats.byMethod) {
-    console.log(`- ${row.discovery_method}: ${row.count}`);
+    return { inserted, duplicated, discovered: inserted + duplicated };
+  } finally {
+    if (ownsDb) db.close();
   }
-
-  console.log("\nSaved DB: ./data/crawler.db");
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err);
-});
+export async function main() {
+  const rawSources = await fs.readFile(STORAGE_PATH, "utf-8");
+  const sources: Source[] = JSON.parse(rawSources);
+
+  const source = selectSource(sources);
+  await discoverSource(source, { daysBack: DAYS_BACK });
+}
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error("Fatal error:", err);
+    process.exitCode = 1;
+  });
+}
